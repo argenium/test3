@@ -103,6 +103,16 @@ options:
     choices:
       - san
       - local
+   vm_start_on_hold:
+    description:
+      - if True or true vm will be launched on hold.
+      - if False or false , vm will be launched on pending. 
+    default: False
+    choices:
+      - True
+      - true
+      - False
+      - false
 
 requirements:
   - "python >= 2.7"
@@ -121,8 +131,7 @@ EXAMPLES = '''
     state: 'present'
     server_url: 'http://10.70.14.100:2633/RPC2'
     vm_name: 'devops-test-1'
-    vm_base: 'centos7-v2'
-    vm_type: 'small'
+    vm_template: 'centos72-S-mgt-v1'
     vm_storage: 'local'
     username: "oneadmin"
     password: "oneadmin"
@@ -159,23 +168,33 @@ EXAMPLES = '''
     username: "oneadmin"
     password: "oneadmin"
 
+- name: Create vm on hold | Create Virtualip
+  opennebula_vm:
+    state: 'present'
+    server_url: 'http://10.70.14.100:2633/RPC2'
+    vm_name: 'devops-test-1'
+    vm_template: "centos72-S-lb-v1"
+    vm_storage: 'local'
+    vm_start_on_hold : 'True'
+    username: "oneadmin"
+    password: "oneadmin"
+
 - name: Create Multiple VMs
   opennebula_vm:
     state: "present"
     server_url: 'http://opennebula-host:2633/RPC2'
     vm_name: '{{ item.name }}'
-    vm_base: 'centos7-v2'
-        vm_type: '{{ item.type }}'
-        vm_storage: '{{ item.storage }}'
-        username: "oneuser"
-        password: "oneuser"
-      with_items:
-        - name: devops005-mgt-01
-          type: small
-          storage: local
-        - name: devops005-mst-01
-          type: small
-          storage: san
+    vm_template: '{{ item.template }}'
+    vm_storage: '{{ item.storage }}'
+    username: "oneuser"
+    password: "oneuser"
+  with_items:
+    - name: devops005-mgt-01
+      template: centos72-M-mgt-v1
+      storage: local
+    - name: devops005-mst-01
+      template: centos72-M-mst-v1
+      storage: local
 '''
 
 # for pretty debugging
@@ -269,6 +288,15 @@ def vm_create(url,auth,template_name,vm_name):
     except Exception as e:
         return str(e)
 
+def vm_create_on_hold(url,auth,template_name,vm_name):
+    one_server = ServerProxy(url)
+    template_id = template_pool_get_id_by_name(url,auth,template_name)
+    try:
+        vm_status = one_server.one.template.instantiate(auth,template_id,vm_name,True,'',False)
+        return vm_status
+    except Exception as e:
+        return str(e)
+
 def vm_delete(url,auth,vm_name):
     one_server = ServerProxy(url)
     vm_id = vm_pool_get_id_by_name(url,auth,vm_name)
@@ -311,12 +339,12 @@ def main():
         "state": {"default": "present", "choices": ['present', 'absent', 'stopped', 'stop', 'started', 'start', 'restarted', 'restart', 'reboot']},
         "server_url": {"required": True, "type": "str"},
         "vm_name": {"required": True, "type": "str"},
-        "vm_type": {"default": "small", "choices": ['small','app','platform','platform_huge']},
-        "vm_storage": {"default": "local", "choices": ['local','san']},
-        "vm_base": {"default": "centos7-v2", "type": "str"},
+        "vm_start_on_hold": {"required": False, "default": "False", "choices": ['True','False','true','false']},  
+        "vm_template": {"required": False, "default": "centos72-S-lb-v1", "type": "str"},
+        "vm_storage": {"required": False, "default": "local", "choices": ['local','san']},
         "username": {"required": True, "type": "str"},
         "password": {"required": True, "type": "str"},
-        "timeout": {"default": "20", "type": "int"},
+        "timeout": {"required": False, "default": "20", "type": "int"},
         }
 
     module = AnsibleModule(argument_spec,supports_check_mode=True)
@@ -327,9 +355,9 @@ def main():
     state = module.params['state']
     # Vm spec
     vm_name =  module.params['vm_name']
-    vm_type = module.params['vm_type']
     vm_storage = module.params['vm_storage']
-    vm_base = module.params['vm_base']
+    vm_template = module.params['vm_template']
+    vm_hold = module.params['vm_start_on_hold'].title()
     # Openneubla frontend
     server_url = module.params['server_url']
     username = module.params['username']
@@ -338,7 +366,7 @@ def main():
     # Create Variables based on module params
     one_auth = '{0}:{1}'.format(username, password)
     #TODO : Create better way to handle this maybe provide template module param
-    template_name = '{0}-{1}-{2}'.format(vm_base, vm_storage, vm_type)
+    template_name = '{0}-{1}'.format(vm_template, vm_storage)
 
     if not HAS_XMLTODICT:
         module.fail_json(msg="xmltodict module is not installed , use pip install xmltodict")
@@ -350,12 +378,12 @@ def main():
         # psuedo check_mode
         module.exit_json(changed=False)
 
-    if state == "present":
+    if state == "present" and vm_hold == "False":
         if vm_pool_get_id_by_name(server_url,one_auth,vm_name):
             if vm_get_state_by_name(server_url,one_auth,vm_name) != 3:
                 module.fail_json(msg="The VM is not in good state please check opennebula UI")
             else:
-                module.exit_json(changed=False, vm_name=vm_name, vm_state='RUNNING')
+                module.exit_json(changed=False, vm_name=vm_name, vm_state='PRESENT')
         else:
             vm_status = vm_create(server_url,one_auth,template_name,vm_name)
             count = 0
@@ -367,7 +395,27 @@ def main():
                   break
               elif vm_state != 3 and count == timeout:
                   module.fail_json(msg="The VM Launch timed out please check opennebula UI for consistency")
-                  break 
+                  break
+
+    if state == "present" and vm_hold == "True":
+        if vm_pool_get_id_by_name(server_url,one_auth,vm_name):
+            if vm_get_state_by_name(server_url,one_auth,vm_name) != 2:
+                module.fail_json(msg="The VM is not in good state please check opennebula UI")
+            else:
+                module.exit_json(changed=False, vm_name=vm_name, vm_state='PRESENT')
+        else:
+            vm_status = vm_create_on_hold(server_url,one_auth,template_name,vm_name)
+            count = 0
+            while count <= timeout:
+              time.sleep(1)
+              vm_state = vm_get_state_by_name(server_url,one_auth,vm_name)
+              if vm_state == 2 and count < timeout :
+                  module.exit_json(changed=True , vm_created=vm_status[0], vm_name=vm_name, vm_id=vm_status[1], vm_state='CREATED')
+                  break
+              elif vm_state != 2 and count == timeout:
+                  module.fail_json(msg="The VM launch on hold timed out please check opennebula UI for consistency")
+                  break
+   
 
     if state == "absent":
         if vm_pool_get_id_by_name(server_url,one_auth,vm_name) != None:
