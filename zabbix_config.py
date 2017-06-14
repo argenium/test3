@@ -117,7 +117,7 @@ class ZabbixConfig(object):
         return data['result']
 
     def get_object(self, params):
-        params["filter"] = {self.api_uid : self.name}
+        params["filter"] = {self.api_uid: self.name}
         self.check_api_args(params)
         result = self.do_request("{}.get".format(self.api), params)
         if len(result) > 0:
@@ -139,6 +139,9 @@ class ZabbixConfig(object):
             params['selectHosts'] = 'hostid'
         if 'hostid' in self.api_args:
             params['filter']['hostid'] = self.api_args['hostid']
+        if self.api == 'trigger':
+            params['expandExpression'] = True
+            params['templated'] = True
 
     def sort_api_args(self):
         if 'templates' in self.api_args:
