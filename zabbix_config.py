@@ -46,199 +46,299 @@ EXAMPLES = '''
     state: "absent"
 '''
 
-import json
+
 HAS_REQUESTS = False
 try:
-    import requests
+    from requests import Session
 except ImportError:
     pass
 else:
     HAS_REQUESTS = True
 
+from ansible.module_utils.basic import AnsibleModule
 
-class ZabbixConfigException(Exception):
-    """ generic zabbix config exception """
-    pass
+ZBX_API_UID = dict(
+    hostgroup='name',
+    template='host',
+    item='name',
+    trigger='description',
+    host='host'
+)
 
 
 class ZabbixConfig(object):
 
     def __init__(self, module):
-        self.url = module.params["zabbix_url"]
-        self.user = module.params["zabbix_user"]
-        self.password = module.params["zabbix_password"]
-        self.api = module.params["api"]
-        self.api_args = module.params["api_args"]
-        self.api_uid = module.params["api_uid"]
 
-        if self.api_uid not in module.params["api_args"]:
-            raise(Exception("No {} provided in api_args".format(self.api_uid)))
+        # api url
+        self.zbx_url = module.params["zabbix_url"]
 
-        self.name = module.params["api_args"][self.api_uid]
-        self.zapi = None
-        self.id = None
-        self.object = None
-        self.check_mode = module.check_mode
-        self.request_id = 0
+        # zbx request_id counter
+        self.zbx_request_id = 0
+        self.zbx_request = None
+
+        # to avoid error on first query
         self.auth = None
 
-        if self.api == "hostgroup":
-            self.id_string = "groupid"
-        else:
-            self.id_string = "{}id".format(self.api)
+        # passing the module fail_json fct allow error handling in do_request
+        # method
+        self.fail_json = module.fail_json
 
-        self.session = requests.Session()
+        self.session = Session()
         self.session.headers.update({'Content-Type': 'application/json-rpc',
                                      'Cache-Control': 'no-cache'})
-        try:
-            self.auth = self.do_request("user.login",
-                                        {'user': self.user,
-                                         'password': self.password})
-        except Exception as e:
-            raise(ZabbixConfigException("Cannot login to zabbix api at {} ({})".format(self.url, e)))
 
-        try:
-            self.get_object({})
-        except Exception as e:
-            raise(ZabbixConfigException("Exception while checking if {} \"{}\" exist [params {}]({})".format(self.api, self.name, self.api_args, e)))
+        # # inject proxy for debugging
+        # proxies = {'http': 'http://localhost:8080'}
+        # self.session.proxies = proxies
 
-    def do_request(self, method, params=None):
-        post_data = {'jsonrpc': '2.0', 'method': method, 'params': params, 'id': self.request_id}
-        if self.auth is not None:
-            post_data['auth'] = self.auth
+        # zbx auth is done through it's api
+        # authenticate, (every request will be parsed for errors)
+        self.prepare_request('user.login',
+                             {'user': module.params["zabbix_user"],
+                              'password': module.params["zabbix_password"]}
+                             )
 
-        response = self.session.post(self.url, data=json.dumps(post_data))
-        self.request_id += 1
-        response.raise_for_status()
-        data = json.loads(response.text)
-        if 'error' in data:
-            raise ZabbixConfigException("Zabbix API Error {}: {}, {}".format(data['error']['code'], data['error']['message'], data['error']['data'] or "No data"))
+        resp = self.do_request()
 
-        return data['result']
+        # register the auth token to use with api
+        self.auth = resp['result']
 
-    def get_object(self, params):
-        params["filter"] = {self.api_uid: self.name}
-        self.check_api_args(params)
-        result = self.do_request("{}.get".format(self.api), params)
-        if len(result) > 0:
-            self.id = result[0][self.id_string]
-            self.object = result[0]
-            self.sort_api_args()
-            return True
+    def prepare_request(self, zbx_method, zbx_params=None, extra_params=None):
+        """
+        Prepare request's json payload.
 
-        return False
+        Purpose of this is to save to internal variable for ansible -vvv
+        debugging output and allow functionning of check_mode.
+        Extra params will be merged.
+        """
+        p = zbx_params.copy()
+        if extra_params is not None:
+            p.update(extra_params)
 
-    def check_api_args(self, params):
-        if 'groups' in self.api_args:
-            params['selectGroups'] = 'groupid'
-        if 'templates' in self.api_args:
-            params['selectParentTemplates'] = 'templateid'
-        if 'interfaces' in self.api_args:
-            params['selectInterfaces'] = 'extend'
-        if 'hosts' in self.api_args:
-            params['selectHosts'] = 'hostid'
-        if 'hostid' in self.api_args:
-            params['filter']['hostid'] = self.api_args['hostid']
-        if self.api == 'trigger':
-            params['expandExpression'] = True
-            params['templated'] = True
+        self.zbx_request = dict(jsonrpc=2.0,
+                                id=self.zbx_request_id,
+                                method=zbx_method,
+                                params=p,
+                                auth=self.auth
+                                )
 
-    def sort_api_args(self):
-        if 'templates' in self.api_args:
-            self.object['templates'] = self.object['parentTemplates']
-            self.object['templates'] = sorted(self.object['templates'], key=lambda k: k['templateid'])
-            self.api_args['templates'] = sorted(self.api_args['templates'], key=lambda k: k['templateid'])
-        if 'groups' in self.api_args:
-            self.object['groups'] = sorted(self.object['groups'], key=lambda k: k['groupid'])
-            self.api_args['groups'] = sorted(self.api_args['groups'], key=lambda k: k['groupid'])
-        if 'interfaces' in self.api_args:
-            self.object['interfaces'] = sorted(self.object['interfaces'], key=lambda k: k['ip'])
-            self.api_args['interfaces'] = sorted(self.api_args['interfaces'], key=lambda k: k['ip'])
-        if 'hosts' in self.api_args:
-            self.object['hosts'] = sorted(self.object['hosts'], key=lambda k: k['hostid'])
-            self.api_args['hosts'] = sorted(self.api_args['hosts'], key=lambda k: k['hostid'])
+    def do_request(self):
+        """
+        Perform post request to zabbix api.
 
-    def update_object(self):
-        has_changed = False
-        meta = {}
+        zbx_method: zabbix api method
+        zbx_params: content of zabbix params, not to be confused with requests
+        params.
 
-        if self.need_update(self.api_args, self.object) is True:
-            self.api_args[self.id_string] = self.id
-            result = self.do_request("{}.update".format(self.api), self.api_args)
-            has_changed = True
-        meta = {"name": self.name, self.id_string: self.id}
-        return (has_changed, meta)
+        Returns: server json response
+        """
+        self.zbx_request_id += 1
 
-    def list_to_dict(self, l):
-        return dict(zip(map(str, range(len(l))), l))
+        r = self.session.post(self.zbx_url, json=self.zbx_request)
 
-    def need_update(self, update, orig, is_recursive=False):
-        need_update = False
-        for k in update.keys():
-            if k not in orig:
-                need_update = True
+        resp = r.json()
+        # unsucessful login attemps returns a http 200 rc. we must examine
+        # returned json for success or failure.
+        if 'error' in resp:
+            self.fail_json(
+                msg="Zabbix API error: {}".format(
+                    resp['error']['data']))
+        else:
+            return resp
+
+    def get_objects(self, api, api_args, filter=None):
+        """
+        Retrieve one or multiple zabbix objects.
+
+        api: zabbix api to use
+        api_args: a dict or list of dict, each dict contain valid zabbix params
+        id_filter: add a filter based on id, will be appended to the right
+                    filter property depending on the api.
+                    Example:
+                        "method": "item.get",
+                        "params": [
+                            {
+                            "filter": {
+                                "hostid": 10153
+                            },
+                            ...
+
+        NOTE: Zabbix api get methods do not accept arrays, If input is array
+        """
+        # zbx_params = api_args
+        zbx_params = {}
+        # zbx_params[ZBX_API_UID[api]] = api_args[ZBX_API_UID[api]]
+
+        # this is kind of hackish, but will plug a filter criteria by the name
+        # of a key found in api_args. Unique key for each api is defined in
+        # ZBX_API_UID hash.
+        zbx_params["filter"] = {ZBX_API_UID[api]: api_args[ZBX_API_UID[api]]}
+
+        # add extra filter from dict
+        if filter is not None:
+            zbx_params["filter"].update(filter)
+
+        # see also:
+        # https://www.zabbix.com/documentation/3.2/manual/api/reference_commentary#common_get_method_parameters
+
+        if "groups" in api_args:
+            zbx_params["selectGroups"] = "groupid"
+
+        if "templates" in api_args:
+            zbx_params["selectParentTemplates"] = "templateid"
+
+        if "interfaces" in api_args:
+            zbx_params["selectInterfaces"] = "extend"
+
+        if "hosts" in api_args:
+            zbx_params["selectHosts"] = "hostid"
+
+        if "hostid" in api_args:
+            zbx_params["filter"]["hostid"] = api_args["hostid"]
+
+        if api == "trigger":
+            zbx_params["expandExpression"] = True
+            zbx_params["templated"] = True
+
+        self.prepare_request("{}.get".format(api), zbx_params)
+        return self.do_request()
+
+    # def update_params(self, api_args, zbx_objects):
+    #     """
+    #     Compute required update for a list of zabbix objects.
+
+    #     api_args: list of zabbix new objects
+    #     zbx_objects: object reference retreived from zabbix. Will contain more
+    #                     objects than api_args
+
+    #     Return a modified api_args where each index only contains values to be
+    #     updated.
+    #     """
+
+    #     # if isinstance(api_args, list):
+    #     #     zbx_params = [self.json_diff(api, api_arg)
+    #     #                   for api_arg in api_args]
+    #     # elif isinstance(api_args, dict):
+    #     #     zbx_params = {}
+    #     #     zbx_params = self.json_diff(api, api_args)
+    #     pass
+
+
+def list_to_dict(l):
+    """
+    Make a dict from a list of dicts.
+
+    Input:
+        l = [     {
+        ...         "groupid": "25"
+        ...       },
+        ...       {
+        ...         "groupid": "9"
+        ...       },
+        ...       {
+        ...         "groupid": "12"
+        ...       }
+        ...     ]
+
+    Output:
+
+        {
+        '9': {'groupid': '9'},
+        '12': {'groupid': '12'},
+        '25': {'groupid': '25'}
+        }
+
+    Note: zip function in Python 3 returns an iterator instead of a list.
+            Therefore we convert iterator to list to get Consistant behavior
+            regardless of interpreter version.
+
+            We could have used something like this:
+                nd = {};
+                for elems in l:
+                    for k, v in elems.items():
+                        nd[v] = {k:v}
+
+            But it requires all values to be unique.
+            This might not be correct in all cases.
+
+    """
+    return dict(
+        list(
+            zip(map(str, range(len(l))),
+                sorted(l, key=valgetter)
+                )
+        )
+    )
+
+
+def json_diff(d1, d2, recursive=False):
+    """
+    Recursively compare 2 json objects.
+
+    d1:  reference json object
+    d2:  json object compared against d1
+
+    Semantically equivalent to the diff command.
+    All identical keys will be popped out of d2. Pass a copy of your dict
+    if you do not want to alter your json blob.
+    Returns: True if objects are different (d2 non-empty)
+                False if objects are identical (d2 empty)
+    """
+    different = False
+    # the .keys method returns a view in python 3 (returned a list in
+    # python 2) This idiom makes it work on both interpreter
+    for k in list(d2.keys()):
+
+        if k not in d1:
+            different = True
+            continue
+
+        if not isinstance(d2[k], list) and not isinstance(d2[k], dict):
+            # cast to string for the test: zbx always return strings
+            d2[k] = str(d2[k])
+            d1[k] = str(d1[k])
+            # if str(d2[k]) != str(d1[k]):
+            if d2[k] != d1[k]:
+                different = True
                 continue
-            if type(update[k]) != list and \
-                    type(update[k]) != dict and update[k] != orig[k]:
-                need_update = True
+
+        # recursive invocation
+        if isinstance(d1[k], dict) and isinstance(d2[k], dict):
+            if json_diff(d1[k], d2[k], True):
+                different = True
                 continue
-            if type(update[k]) != type(orig[k]):
-                if (type(update[k]) != str and type(update[k]) != unicode) \
-                        or (type(orig[k]) != str and type(orig[k]) != unicode):
-                    need_update = True
-                    continue
-            if type(orig[k]) == dict:
-                if self.need_update(update[k], orig[k], True) is True:
-                    need_update = True
-                    continue
-            elif type(orig[k]) == list:
-                if self.need_update(self.list_to_dict(update[k]), self.list_to_dict(orig[k]), True) is True:
-                    need_update = True
-                    continue
 
-            if is_recursive is False:
-                update.pop(k)
+        # recursive invocation
+        if isinstance(d1[k], list) and isinstance(d2[k], list):
+            if json_diff(list_to_dict(d1[k]), list_to_dict(d2[k]), True):
+                different = True
+                continue
 
-        return need_update
+        if not recursive:
+            d2.pop(k)
 
-    def state_present(self):
-        has_changed = False
-        meta = {}
+    return different
 
-        try:
-            if self.id is None:
-                result = self.do_request("{}.create".format(self.api), self.api_args)
-                has_changed = True
-                self.id = result["{}s".format(self.id_string)][0]
-                meta = {"name": self.name, self.id_string: self.id}
-            else:
-                has_changed, meta = self.update_object()
-        except Exception as e:
-            raise(ZabbixConfigException("Exception for api: {}, name: {}, id: {} [params {}]({})".format(self.api, self.name, self.id, self.api_args, e)))
 
-        return (has_changed, meta)
+def valgetter(x):
+    """
+    Return value from a one item dict.
 
-    def state_absent(self):
-        has_changed = False
-        meta = {}
+    input: {'groupid': '9'}
+    output: 9
 
-        if self.id is None:
-            return (False, {})
-
-        try:
-            result = self.do_request("{}.delete".format(self.api), [self.id])
-            if len(result) > 0:
-                has_changed = True
-                meta = {"name": self.name, self.id_string: self.id}
-        except Exception as e:
-            raise(ZabbixConfigException("Exception while deleting {} {} ({})".format(self.api, self.name, e)))
-
-        return (has_changed, meta)
+    Will try to cast value to int. This is required for proper sorting when
+    string is a number.
+    """
+    val = list(x.values())[0]
+    try:
+        return int(val)
+    except:
+        return val
 
 
 def main():
-    has_changed = False
-    result = {}
 
     module = AnsibleModule(
         argument_spec = dict(
@@ -246,8 +346,8 @@ def main():
             zabbix_user = dict(required=True, type="str"),
             zabbix_password = dict(required=True, type="str", no_log=True),
             api = dict(required=True, type="str"),
-            api_uid = dict(required=True, type="str"),
-            api_args = dict(required=True, type="dict"),
+            template = dict(required=False, type="str"),
+            api_args = dict(required=True, type="raw"),
             state = dict(default="present",
                        choices=["present", "absent"], type="str")
         ),
@@ -256,19 +356,132 @@ def main():
     if (HAS_REQUESTS is False):
         module.fail_json(msg="'requests' package not found... \
                          you can try install using pip: pip install requests")
-    try:
-        config = ZabbixConfig(module)
 
-        if module.params['state'] == "present":
-            has_changed, result = config.state_present()
-        else:
-            has_changed, result = config.state_absent()
-    except Exception as e:
-        module.fail_json(msg="{}".format(e))
+    zbx = ZabbixConfig(module)
 
-    module.exit_json(changed=has_changed, meta=result)
+    # extract args from module
+    state = module.params['state']
+    api = module.params['api']
+    api_args = module.params['api_args']
+    template = module.params['template']
+    templateid = None
+
+    # default state and response
+    changed = False
+    obj_exist = False
+    zbx_resp = None
+    meta = ""
+
+    # quirk for zabbix hostgroup inconsistencies
+    # this value is used as key in ansible meta output.
+    if api == "hostgroup":
+        id_string = "groupid"
+    else:
+        id_string = "{}id".format(api)
+
+    # check if objects(s) exist
+    if template is not None:
+        # if a template name is passed we fetch it's id.
+
+        templateid = zbx.get_objects('template', dict(host=template))
+        # inject templateid to avoid returning multiple instance of an object,
+        # it does so for instance if object is link to a host and a template.
+        templateid = dict(hostid=templateid['result'][0]['templateid'])
+
+        zbx_objects = zbx.get_objects(api, module.params['api_args'],
+                                      templateid)
+    else:
+        # assume an hostid was passed in the api_args content
+        zbx_objects = zbx.get_objects(api, module.params['api_args'])
+
+    # while one day we would like to support loading of several identical
+    # objects belonging to the same template, it poses challenges as
+    # we can only search for one object at at time or return all object of a
+    # template hostid. In that scenario this test below would not be enough. We
+    # would have to filter list to return only dicts of interest.
+    if len(zbx_objects['result']) > 0:
+        obj_exist = True
+
+    # # insert hostid if any to work against a specific template
+    # if templateid:
+    #     api_args["hostid"] = hostid
+
+    if state == "present" and not obj_exist:
+        zbx.prepare_request("{}.create".format(api), api_args, templateid)
+        changed = True
+        if not module.check_mode:
+            zbx_resp = zbx.do_request()
+
+    elif state == "absent" and obj_exist:
+        zbx.prepare_request("{}.delete".format(api), api_args, templateid)
+        changed = True
+        if not module.check_mode:
+            zbx_resp = zbx.do_request()
+
+    elif state == "present" and obj_exist:
+        # check if object needs update
+        # this variable is to prevent altering ansible invocation args
+        zbx_api_args = api_args.copy()
+
+        # templates vs selectParentTemplates quirk
+        current_zbx_object = zbx_objects['result'][0]
+        if 'parentTemplates' in current_zbx_object:
+            current_zbx_object['templates'] =  \
+                current_zbx_object.pop("parentTemplates")
+
+        if json_diff(current_zbx_object, zbx_api_args):
+            # import pprint; pp = pprint.PrettyPrinter(indent=2); pp.pprint(api_args)
+            # import sys; sys.exit()
+
+            # Side effect of json_diff method is to pop out the uid key of a
+            # method. Let's insert it back.
+            zbx_api_args[ZBX_API_UID[api]] = api_args[ZBX_API_UID[api]]
+
+            # object id must also be inserted back
+            zbx_api_args[id_string] = current_zbx_object[id_string]
+
+            zbx.prepare_request("{}.update".format(api), zbx_api_args,
+                                templateid)
+            changed = True
+
+            if not module.check_mode:
+                zbx_resp = zbx.do_request()
+
+                # Update only returns the string id if sucessful so we fill
+                # meta from the args
+                meta = {"name": zbx_api_args[ZBX_API_UID[api]],
+                        id_string: zbx_api_args[id_string]
+                        }
+    # zbx_resp is None when running check mode or when object already exists in
+    # desired state.
+
+    # grap response of 'get' requests
+    # elif zbx_resp is None and zbx.zbx_request['method'].endswith(".get"):
+    if zbx_resp is None:
+        zbx_resp = zbx_objects
+
+    # fill meta if not filled by an update.
+    if not meta:
+        # sample output when creating an item.
+        # {
+        #     "id": 3,
+        #     "jsonrpc": "2.0",
+        #     "result": {
+        #         "itemids": [
+        #             "30060"
+        #         ]
+        #     }
+        # }
+        if api != "item" and api != "trigger":
+            meta = {"name": zbx_resp['result'][0][ZBX_API_UID[api]],
+                    id_string: zbx_resp['result'][0][id_string]
+                    }
+
+    module.exit_json(changed=changed,
+                     meta=meta,
+                     zabbix_request=zbx.zbx_request,
+                     results=zbx_resp)
 
 
-from ansible.module_utils.basic import AnsibleModule
 if __name__ == '__main__':
     main()
