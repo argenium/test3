@@ -9,7 +9,9 @@ module: zabbix_config
 short_description: Configure zabbix through the Zabbix API
 description:
  This module call the Zabbix API.
-author: "Sebastien Nobert (sebastien.nobert@guavus.com"
+author:
+  - "Sebastien Nobert (sebastien.nobert@guavus.com)"
+  - "Felix Archambault (felix.archambault@guavus.com)"
 requirements:
     - requests
 '''
@@ -339,16 +341,15 @@ def valgetter(x):
 
 
 def main():
-
     module = AnsibleModule(
-        argument_spec = dict(
-            zabbix_url = dict(required=True, type="str"),
-            zabbix_user = dict(required=True, type="str"),
-            zabbix_password = dict(required=True, type="str", no_log=True),
-            api = dict(required=True, type="str"),
-            template = dict(required=False, type="str"),
-            api_args = dict(required=True, type="raw"),
-            state = dict(default="present",
+        argument_spec=dict(
+            zabbix_url=dict(required=True, type="str"),
+            zabbix_user=dict(required=True, type="str"),
+            zabbix_password=dict(required=True, type="str", no_log=True),
+            api=dict(required=True, type="str"),
+            template=dict(required=False, type="str"),
+            api_args=dict(required=True, type="raw"),
+            state=dict(default="present",
                        choices=["present", "absent"], type="str")
         ),
         supports_check_mode=True
@@ -382,10 +383,9 @@ def main():
     # check if objects(s) exist
     if template is not None:
         # if a template name is passed we fetch it's id.
-
         templateid = zbx.get_objects('template', dict(host=template))
-        # inject templateid to avoid returning multiple instance of an object,
-        # it does so for instance if object is link to a host and a template.
+        # Inject templateid to avoid returning multiple instance of an object.
+        # It does so for instance if object is link to a host and a template.
         templateid = dict(hostid=templateid['result'][0]['templateid'])
 
         zbx_objects = zbx.get_objects(api, module.params['api_args'],
@@ -401,10 +401,6 @@ def main():
     # would have to filter list to return only dicts of interest.
     if len(zbx_objects['result']) > 0:
         obj_exist = True
-
-    # # insert hostid if any to work against a specific template
-    # if templateid:
-    #     api_args["hostid"] = hostid
 
     if state == "present" and not obj_exist:
         zbx.prepare_request("{}.create".format(api), api_args, templateid)
@@ -442,8 +438,8 @@ def main():
 
             zbx.prepare_request("{}.update".format(api), zbx_api_args,
                                 templateid)
-            changed = True
 
+            changed = True
             if not module.check_mode:
                 zbx_resp = zbx.do_request()
 
@@ -452,17 +448,11 @@ def main():
                 meta = {"name": zbx_api_args[ZBX_API_UID[api]],
                         id_string: zbx_api_args[id_string]
                         }
-    # zbx_resp is None when running check mode or when object already exists in
-    # desired state.
 
-    # grap response of 'get' requests
-    # elif zbx_resp is None and zbx.zbx_request['method'].endswith(".get"):
-    if zbx_resp is None:
-        zbx_resp = zbx_objects
-
-    # fill meta if not filled by an update.
-    if not meta:
-        # sample output when creating an item.
+    # object was just created, we must fill meta
+    if not obj_exist and zbx_resp is not None:
+        # Sample output when creating an item. Returned result is not a list.
+        # id_string is also plural
         # {
         #     "id": 3,
         #     "jsonrpc": "2.0",
@@ -472,10 +462,15 @@ def main():
         #         ]
         #     }
         # }
-        if api != "item" and api != "trigger":
-            meta = {"name": zbx_resp['result'][0][ZBX_API_UID[api]],
-                    id_string: zbx_resp['result'][0][id_string]
-                    }
+        meta = {api_args[ZBX_API_UID[api]]:
+                zbx_resp['result'][id_string + 's'][0]}
+
+    # object not updated because identical or check mode
+    if obj_exist and zbx_resp is None:
+        zbx_resp = zbx_objects
+        meta = {zbx_resp['result'][0][ZBX_API_UID[api]]:
+                zbx_resp['result'][0][id_string]
+                }
 
     module.exit_json(changed=changed,
                      meta=meta,
