@@ -192,27 +192,33 @@ def vm_pool_get_id_by_name(url,auth,vm_name):
         vm_pool_info = one_server.one.vmpool.info(auth,-3,-1,-1,-1)
     except Exception as e:
         return str(e)
-    vm_pool_info_dict = xmltodict.parse(vm_pool_info[1])
-    # pretty json below
-    #vm_pool_info_json = json.dumps(vm_pool_info_dict, indent=2)
-    #vm_jsonObj = json.loads(vm_pool_info_json)
+    if vm_pool_info[1] != '<VM_POOL></VM_POOL>': 
+        vm_pool_info_dict = xmltodict.parse(vm_pool_info[1])
+        # pretty json below
+        #vm_pool_info_json = json.dumps(vm_pool_info_dict, indent=2)
+        #vm_jsonObj = json.loads(vm_pool_info_json)
 
-    if isinstance(vm_pool_info_dict['VM_POOL']['VM'], dict):
-        if 'ID' not in vm_pool_info_dict['VM_POOL']['VM']:
-            raise ValueError("ID not present in xml-rpc response")
-        else:
-            id = vm_pool_info_dict['VM_POOL']['VM']['ID']
-            return int(id)
+        if isinstance(vm_pool_info_dict['VM_POOL']['VM'], dict):
+            if 'ID' not in vm_pool_info_dict['VM_POOL']['VM']:
+                raise ValueError("ID not present in xml-rpc response")
+            else:
+                if vm_pool_info_dict['VM_POOL']['VM'] == vm_name:
+                    id = vm_pool_info_dict['VM_POOL']['VM']['ID']
+                    return int(id)
+                else:
+                    pass 
 
-    elif isinstance(vm_pool_info_dict['VM_POOL']['VM'], list):
-        for index,item in enumerate(vm_pool_info_dict['VM_POOL']['VM']):
-            if 'NAME' not in item:
-                raise ValueError("no NAME key in xml-rpc template_pool response")
-            elif item["NAME"] == vm_name:
-                 id = vm_pool_info_dict['VM_POOL']['VM'][index]['ID']
-                 return int(id)
-            elif item["NAME"] != vm_name:
-                pass
+        elif isinstance(vm_pool_info_dict['VM_POOL']['VM'], list):
+            for index,item in enumerate(vm_pool_info_dict['VM_POOL']['VM']):
+                if 'NAME' not in item:
+                    raise ValueError("no NAME key in xml-rpc template_pool response")
+                elif item["NAME"] == vm_name:
+                    id = vm_pool_info_dict['VM_POOL']['VM'][index]['ID']
+                    return int(id)
+                elif item["NAME"] != vm_name:
+                    pass
+    else:
+        pass
 
 # To get template_id from opennebula
 def template_pool_get_id_by_name(url,auth,template_name):
