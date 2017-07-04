@@ -34,12 +34,6 @@ description:
      - Create, delete , start , stop or restart  opennebula virtual machine using xmlrpc opennebula api
 
 options:
-  archive_path:
-    description:
-      - Use with state C(present) to archive an image to a .tar file.
-    default: false
-    required: false 
-    version_added: "2.1"
   state:
     description:
       - when state is present -> create and launch vm. 
@@ -77,25 +71,16 @@ options:
       - Timeout in sec  to wait to check the status of VM.
     default: 20 
     required: false
-  vm_base:
+  vm_template:
     description: 
-      - A valid prefix of centos vm template , usually in the form centos7-v2
-    default: centos7-v2  
+      - A valid centos template name in opennebula
+    default: centos72-S-lb-v1
     required: false
   vm_name:
     description:
       - A unique name for vm.
     required: true
-  vm_type:
-    description:
-      - size of vm from below choices
-    default: small
-    choices:
-      - small
-      - app
-      - platform
-      - platform_huge
-   vm_start_on_hold:
+  vm_start_on_hold:
     description:
       - if True or true vm will be launched on hold.
       - if False or false , vm will be launched on pending. 
