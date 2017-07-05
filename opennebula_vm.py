@@ -202,7 +202,7 @@ def vm_pool_get_id_by_name(url,auth,vm_name):
             if 'ID' not in vm_pool_info_dict['VM_POOL']['VM']:
                 raise ValueError("ID not present in xml-rpc response")
             else:
-                if vm_pool_info_dict['VM_POOL']['VM'] == vm_name:
+                if vm_pool_info_dict['VM_POOL']['VM']['NAME'] == vm_name:
                     id = vm_pool_info_dict['VM_POOL']['VM']['ID']
                     return int(id)
                 else:
