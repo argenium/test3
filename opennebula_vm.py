@@ -419,7 +419,11 @@ def main():
 
     if state in ["stopped", "stop", "shutdown"]:
         if vm_pool_get_id_by_name(server_url,one_auth,vm_name) != None:
-            if vm_get_state_by_name(server_url,one_auth,vm_name) != one_vm_states['STOPPED']:
+
+            if vm_get_state_by_name(server_url,one_auth,vm_name) == one_vm_states['HOLD']:
+                module.exit_json(changed=False, vm_name=vm_name, vm_state='HOLD')
+
+            elif vm_get_state_by_name(server_url,one_auth,vm_name) != one_vm_states['STOPPED']:
                 vm_status = vm_stop(server_url,one_auth,vm_name)
                 count = 0
                 while (count <= timeout):
@@ -431,7 +435,8 @@ def main():
                   elif vm_state != one_vm_states['STOPPED'] and count == timeout:
                       module.fail_json(msg="The VM Stop action timed out please check opennebula UI for consistency")
                       break
-                  count += 1  
+                  count += 1
+
             else:
                 module.exit_json(changed=False, vm_name=vm_name, vm_state='STOPPED')
         else:
@@ -439,7 +444,11 @@ def main():
 
     if state in ["started", "start"]:
         if vm_pool_get_id_by_name(server_url,one_auth,vm_name) != None:
-            if vm_get_state_by_name(server_url,one_auth,vm_name) != one_vm_states['ACTIVE']:
+
+            if vm_get_state_by_name(server_url,one_auth,vm_name) == one_vm_states['HOLD']:
+                module.exit_json(changed=False, vm_name=vm_name, vm_state='HOLD')
+
+            elif vm_get_state_by_name(server_url,one_auth,vm_name) != one_vm_states['ACTIVE']:
                 vm_status = vm_start(server_url,one_auth,vm_name)
                 count = 0
                 while (count <= timeout):
@@ -460,7 +469,11 @@ def main():
      
     if state in ["restarted", "restart", "reboot"]:
         if vm_pool_get_id_by_name(server_url,one_auth,vm_name) != None:
-            if vm_get_state_by_name(server_url,one_auth,vm_name) == one_vm_states['ACTIVE']:
+
+            if vm_get_state_by_name(server_url,one_auth,vm_name) == one_vm_states['HOLD']:
+                module.exit_json(changed=False, vm_name=vm_name, vm_state='HOLD')
+     
+            elif vm_get_state_by_name(server_url,one_auth,vm_name) == one_vm_states['ACTIVE']:
                 vm_status = vm_reboot(server_url,one_auth,vm_name)
                 count = 0
                 while (count <= timeout):
@@ -469,7 +482,8 @@ def main():
                       module.exit_json(changed=True, vm_restarted=vm_status[0], vm_name=vm_name, vm_id=vm_status[1], vm_state='RESTARTED')
                   elif vm_state != one_vm_states['ACTIVE'] and count == timeout:
                       module.fail_json(msg="The VM Restart action timed out please check opennebula UI for consistency")
-                  count += 1 
+                  count += 1
+ 
             else:
                 module.fail_json(msg="VM not in valid state , it should be ACTIVE(3)")
         else:
