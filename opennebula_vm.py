@@ -425,7 +425,7 @@ def main():
                 while (count <= timeout):
                   time.sleep(1) 
                   vm_state = vm_get_state_by_name(server_url,one_auth,vm_name)
-                  if vm_status[0] == True and vm_state == 4 and count < timeout:
+                  if vm_status[0] == True and vm_state == one_vm_states['STOPPED'] and count < timeout:
                       module.exit_json(changed=True, vm_stopped=vm_status[0], vm_name=vm_name, vm_id=vm_status[1], vm_state='STOPPED')
                       break
                   elif vm_state != one_vm_states['STOPPED'] and count == timeout:
