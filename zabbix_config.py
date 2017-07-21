@@ -59,12 +59,15 @@ else:
 
 from ansible.module_utils.basic import AnsibleModule
 
+# last one is a quirk because when you use configuration.export everything is
+# 'groups' instead of hostgroup
 ZBX_API_UID = dict(
     hostgroup='name',
     template='host',
     item='name',
     trigger='description',
-    host='host'
+    host='host',
+    user='alias'
 )
 
 
@@ -155,19 +158,20 @@ class ZabbixConfig(object):
 
         api: zabbix api to use
         api_args: a dict or list of dict, each dict contain valid zabbix params
-        id_filter: add a filter based on id, will be appended to the right
-                    filter property depending on the api.
-                    Example:
-                        "method": "item.get",
-                        "params": [
-                            {
-                            "filter": {
-                                "hostid": 10153
-                            },
-                            ...
+        filter: a dict containing filters that will be injected literally
+            e.g: filter={"hostid": 10153} will result in:
+                    "method": "item.get",
+                    "params": [
+                        {
+                        "filter": {
+                            "hostid": 10153
+                        },
+                        ...
 
-        NOTE: Zabbix api get methods do not accept arrays, If input is array
+        NOTE: Zabbix api get methods do not accept arrays. As such, it cannot
+                perform bulk query.
         """
+
         # zbx_params = api_args
         zbx_params = {}
         # zbx_params[ZBX_API_UID[api]] = api_args[ZBX_API_UID[api]]
@@ -202,6 +206,9 @@ class ZabbixConfig(object):
         if api == "trigger":
             zbx_params["expandExpression"] = True
             zbx_params["templated"] = True
+
+        if api == "configuration.export":
+            pass
 
         self.prepare_request("{}.get".format(api), zbx_params)
         return self.do_request()
@@ -340,32 +347,17 @@ def valgetter(x):
         return val
 
 
-def main():
-    module = AnsibleModule(
-        argument_spec=dict(
-            zabbix_url=dict(required=True, type="str"),
-            zabbix_user=dict(required=True, type="str"),
-            zabbix_password=dict(required=True, type="str", no_log=True),
-            api=dict(required=True, type="str"),
-            template=dict(required=False, type="str"),
-            api_args=dict(required=True, type="raw"),
-            state=dict(default="present",
-                       choices=["present", "absent"], type="str")
-        ),
-        supports_check_mode=True
-    )
-    if (HAS_REQUESTS is False):
-        module.fail_json(msg="'requests' package not found... \
-                         you can try install using pip: pip install requests")
+def update_zabbix_object(module, zbx, zbx_objectid=None):
+    """
+    Create, Read, Update, Delete a zabbix object
 
-    zbx = ZabbixConfig(module)
+    See list of objects in zabbix api methode reference.
+    """
 
     # extract args from module
     state = module.params['state']
     api = module.params['api']
     api_args = module.params['api_args']
-    template = module.params['template']
-    templateid = None
 
     # default state and response
     changed = False
@@ -380,18 +372,19 @@ def main():
     else:
         id_string = "{}id".format(api)
 
-    # check if objects(s) exist
-    if template is not None:
-        # if a template name is passed we fetch it's id.
-        templateid = zbx.get_objects('template', dict(host=template))
+    # Attempt to get templateid if template_name was passed. Will return
+    templateid = get_object_id(zbx, 'template', module.params['template_name'])
+
+    if templateid is not None:
         # Inject templateid to avoid returning multiple instance of an object.
         # It does so for instance if object is link to a host and a template.
-        templateid = dict(hostid=templateid['result'][0]['templateid'])
 
+        # objectid = zbx.get_objects('template', dict(host=template_name))
         zbx_objects = zbx.get_objects(api, module.params['api_args'],
-                                      templateid)
+                                      dict(hostid=templateid)
+                                      )
     else:
-        # assume an hostid was passed in the api_args content
+        # assume an hostid is passed in the api_args content
         zbx_objects = zbx.get_objects(api, module.params['api_args'])
 
     # while one day we would like to support loading of several identical
@@ -476,6 +469,192 @@ def main():
                      meta=meta,
                      zabbix_request=zbx.zbx_request,
                      results=zbx_resp)
+
+
+def zabbix_config(module, zbx):
+    """
+    Import and export Zabbix configuration data.
+
+    This makes use of zabbix api import/export mechanism.
+
+    Example params to export configuration:
+
+        "params": {
+        "options": {
+            "hosts": [
+                "10161"
+            ]
+        },
+        "format": "xml"
+        },
+
+        where options object has the following parameters:
+            * groups - (array) IDs of host groups to export;
+            * hosts - (array) IDs of hosts to export;
+            * images - (array) IDs of images to export;
+            * maps - (array) IDs of maps to export.
+            * screens - (array) IDs of screens to export;
+            * templates - (array) IDs of templates to export;
+            * valueMaps - (array) IDs of value maps to export;
+    """
+    template_name = module.params['template_name']
+    name = module.params['zbx_name']
+    kind = module.params['kind']
+    changed = False
+    api = module.params['api']
+    zbx_resp = None
+
+    if api == 'configuration.export':
+
+        # template_name module arg prevails
+        if (template_name is not None or (kind == 'template' and
+                                          name is not None)):
+
+            name = template_name
+            kind = 'template'
+
+        # find the objectid we want to export
+        object_id = get_object_id(zbx, kind, name)
+        zbx.prepare_request("configuration.export",
+                            module.params['api_args'],
+                            dict(options={"{}s".format(kind): [object_id]})
+                            )
+
+    else:
+        # Import rules picked those as enabled in the UI template import wizard
+        # Those commented here were left aside.
+        zbx.prepare_request("configuration.import",
+                            module.params['api_args'],
+                            {"rules": dict(
+                                items=dict(
+                                    createMissing='true',
+                                    updateExisting='true',
+                                    deleteMissing='true'
+                                ),
+                                triggers=dict(
+                                    createMissing='true',
+                                    updateExisting='true',
+                                    deleteMissing='true'
+                                ),
+                                templates=dict(
+                                    createMissing='true',
+                                    updateExisting='true'
+                                ),
+                                graphs=dict(
+                                    createMissing='true',
+                                    updateExisting='true',
+                                    deleteMissing='true'
+                                ),
+                                groups=dict(
+                                    createMissing='true'
+                                ),
+                                hosts=dict(
+                                    createMissing='true',
+                                    updateExisting='true'
+                                ),
+                                httptests=dict(
+                                    createMissing='true',
+                                    updateExisting='true',
+                                    deleteMissing='true'
+                                ),
+                                templateLinkage=dict(
+                                    createMissing='true'
+                                ),
+                                templateScreens=dict(
+                                    createMissing='true',
+                                    updateExisting='true',
+                                    deleteMissing='true'
+                                ),
+                                images=dict(
+                                    createMissing='true',
+                                    updateExisting='true'
+                                ),
+                                maps=dict(
+                                    createMissing='true',
+                                    updateExisting='true'
+                                ),
+                                screens=dict(
+                                    createMissing='true',
+                                    updateExisting='true'
+                                ),
+                                valueMaps=dict(
+                                    createMissing='true',
+                                    updateExisting='true'
+                                )
+                            )}
+                            )
+
+    if not module.check_mode:
+        zbx_resp = zbx.do_request()
+
+    if zbx_resp is not None:
+        if api == 'configuration.import':
+            changed = zbx_resp['result']
+
+    module.exit_json(changed=changed,
+                     zabbix_request=zbx.zbx_request,
+                     results=zbx_resp)
+
+
+def get_object_id(zbx, object_type, object_name=None):
+    """
+    Get a zabbix object id.
+
+    zbx: zbx object to interact with zabbix api
+    object_type: kind of the object (item, trigger, template,...)
+    object_name: object name to get the id of.
+
+
+    Returns: Object id or None if object_name is None.
+    """
+    if object_name is None:
+        return None
+    else:
+        if object_type == 'group':
+            res = zbx.get_objects('hostgroup',
+                                  {ZBX_API_UID['hostgroup']: object_name})
+        else:
+            res = zbx.get_objects(object_type,
+                                  {ZBX_API_UID[object_type]: object_name})
+
+        if len(res['result']) > 0:
+            if object_type == 'group':
+                return res['result'][0]['groupid']
+            else:
+                return res['result'][0]["{}id".format(object_type)]
+        else:
+            return None
+
+
+def main():
+    module = AnsibleModule(
+        argument_spec=dict(
+            zabbix_url=dict(required=True, type="str"),
+            zabbix_user=dict(required=True, type="str"),
+            zabbix_password=dict(required=True, type="str", no_log=True),
+            api=dict(required=True, type="str"),
+            api_args=dict(required=True, type="raw"),
+            template_name=dict(required=False, type="str"),
+            zbx_name=dict(required=False, type="str"),
+            kind=dict(required=False, type="str"),
+            state=dict(default="present",
+                       choices=["present", "absent"], type="str")
+        ),
+        supports_check_mode=True
+    )
+    if (HAS_REQUESTS is False):
+        module.fail_json(msg="'requests' package not found... \
+                         you can try install using pip: pip install requests")
+
+    zbx = ZabbixConfig(module)
+
+    if module.params['api'].startswith('configuration'):
+        # Use zabbix configurations loading mechanism. This is handy to work
+        # with complex templates
+        zabbix_config(module, zbx)
+    else:
+        # Interact with zbx using other api methods.
+        update_zabbix_object(module, zbx)
 
 
 if __name__ == '__main__':
