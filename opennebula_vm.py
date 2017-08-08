@@ -185,6 +185,14 @@ try:
 except ImportError:
     HAS_XMLTODICT = False
 
+def get_one_user_info(url,auth):
+    one_server = ServerProxy(url)
+    try:
+        one_user_info =  one_server.one.user.info(auth,-1)
+        return one_user_info
+    except Exception as e:
+        return str(e)
+
 # Function to get VM id by name of the vm
 def vm_pool_get_id_by_name(url,auth,vm_name):
     one_server = ServerProxy(url)
@@ -365,7 +373,16 @@ def main():
     if module.check_mode:
         # psuedo check_mode
         module.exit_json(changed=False)
-
+    
+    # Validate user 
+    user_info = get_one_user_info(server_url,one_auth) 
+    if user_info[0] == False:
+        err_msg = '{0}{1}'.format(user_info[1],'Username or password incorrect')
+        module.fail_json(msg=err_msg)
+    
+    elif user_info[0] == True:
+        pass
+      
     if state == "present" and vm_hold == "False":
         if vm_pool_get_id_by_name(server_url,one_auth,vm_name):
             if vm_get_state_by_name(server_url,one_auth,vm_name) != one_vm_states["ACTIVE"]:
