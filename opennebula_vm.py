@@ -328,7 +328,7 @@ def main():
         "vm_start_on_hold": {"required": False, "default": "False", "choices": ['True','False','true','false']},  
         "vm_template": {"required": False, "default": "centos72-S-lb-v1", "type": "str"},
         "username": {"required": True, "type": "str"},
-        "password": {"required": True, "type": "str"},
+        "password": {"required": True, "type": "str", "no_log": True},
         "timeout": {"required": False, "default": "20", "type": "int"},
         }
 
