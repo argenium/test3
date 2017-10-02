@@ -30,6 +30,10 @@ options:
             - File containing ; separated sql queries
         required: true
 
+requirements:
+  - "python >= 2.7"
+  - "pyhive[hive] >= 0.2.1"
+
 author:
     - Vanessa Vuibert (@vvuibert)
 '''
