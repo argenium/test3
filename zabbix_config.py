@@ -59,8 +59,7 @@ else:
 
 from ansible.module_utils.basic import AnsibleModule
 
-# last one is a quirk because when you use configuration.export everything is
-# 'groups' instead of hostgroup
+# Mapping to retreive the primary key of and object from the object type.
 ZBX_API_UID = dict(
     hostgroup='name',
     template='host',
@@ -521,11 +520,16 @@ def zabbix_config(module, zbx):
                             )
 
     else:
-        # Import rules picked those as enabled in the UI template import wizard
-        # Those commented here were left aside.
+        # Import rules. Picked those as enabled in the UI template import
+        # wizard.
         zbx.prepare_request("configuration.import",
                             module.params['api_args'],
                             {"rules": dict(
+                                applications=dict(
+                                    createMissing='true',
+                                    updateExisting='true',
+                                    deleteMissing='true'
+                                ),
                                 items=dict(
                                     createMissing='true',
                                     updateExisting='true',
