@@ -329,7 +329,7 @@ def main():
         "vm_template": {"required": False, "default": "centos72-S-lb-v1", "type": "str"},
         "username": {"required": True, "type": "str"},
         "password": {"required": True, "type": "str", "no_log": True},
-        "timeout": {"required": False, "default": "20", "type": "int"},
+        "timeout": {"required": False, "default": "30", "type": "int"},
         }
 
     module = AnsibleModule(argument_spec,supports_check_mode=True)
@@ -399,10 +399,15 @@ def main():
                   module.exit_json(changed=True , vm_created=vm_status[0], vm_name=vm_name, vm_id=vm_status[1], vm_state='CREATED')
                   break
               elif vm_state != one_vm_states["ACTIVE"] and count == timeout:
-                  vm_state_text =  one_vm_states.keys()[one_vm_states.values().index(vm_state)]
-                  print_msg = '{0} {1}'.format('The VM action timed out please check opennebula UI,current VM state is',vm_state_text)
-                  module.fail_json(msg=print_msg)
-                  break
+                  if vm_state in one_vm_states:
+                      vm_state_text =  one_vm_states.keys()[one_vm_states.values().index(vm_state)]
+                      print_msg = '{0} {1}'.format('The VM action timed out please check opennebula UI,current VM state is',vm_state_text)
+                      module.fail_json(msg=print_msg)
+                      break
+                  else:
+                      print_msg = '{0} {1}'.format(vm_status[0],vm_status[1])
+                      module.fail_json(msg=print_msg)
+                      break
               count += 1
 
     if state == "present" and vm_hold == "True":
@@ -421,19 +426,23 @@ def main():
                   module.exit_json(changed=True , vm_created=vm_status[0], vm_name=vm_name, vm_id=vm_status[1], vm_state='CREATED')
                   break
               elif vm_state != one_vm_states['HOLD'] and count == timeout:
-                  vm_state_text =  one_vm_states.keys()[one_vm_states.values().index(vm_state)]
-                  print_msg = '{0} {1}'.format('The VM action timed out please check opennebula UI,current VM state is',vm_state_text)
-                  module.fail_json(msg=print_msg)
-                  break
+                  if vm_state in one_vm_states:
+                      vm_state_text =  one_vm_states.keys()[one_vm_states.values().index(vm_state)]
+                      print_msg = '{0} {1}'.format('The VM action timed out please check opennebula UI,current VM state is',vm_state_text)
+                      module.fail_json(msg=print_msg)
+                      break
+                  else:
+                      print_msg = '{0} {1}'.format(vm_status[0],vm_status[1])
+                      module.fail_json(msg=print_msg)
+                      break
               count += 1
-   
 
     if state == "absent":
         if vm_pool_get_id_by_name(server_url,one_auth,vm_name) != None:
             vm_status = vm_delete(server_url,one_auth,vm_name)
             if vm_status[0] == True:
                 module.exit_json(changed=True, vm_deleted=vm_status[0], vm_name=vm_name, vm_id=vm_status[1], vm_state='DELETED')
-            else: 
+            else:
                 module.fail_json(msg=vm_status[1])
         else:
             module.exit_json(changed=False, vm_name=vm_name, vm_state='DELETED')
@@ -454,10 +463,15 @@ def main():
                       module.exit_json(changed=True, vm_stopped=vm_status[0], vm_name=vm_name, vm_id=vm_status[1], vm_state='STOPPED')
                       break
                   elif vm_state != one_vm_states['STOPPED'] and count == timeout:
-                      vm_state_text =  one_vm_states.keys()[one_vm_states.values().index(vm_state)]
-                      print_msg = '{0} {1}'.format('The VM action timed out please check opennebula UI,current VM state is',vm_state_text)
-                      module.fail_json(msg=print_msg)
-                      break
+                      if vm_state in one_vm_states:
+                          vm_state_text =  one_vm_states.keys()[one_vm_states.values().index(vm_state)]
+                          print_msg = '{0} {1}'.format('The VM action timed out please check opennebula UI,current VM state is',vm_state_text)
+                          module.fail_json(msg=print_msg)
+                          break
+                      else:
+                          print_msg = '{0} {1}'.format(vm_status[0],vm_status[1])
+                          module.fail_json(msg=print_msg)
+                          break
                   count += 1
 
             else:
@@ -476,28 +490,33 @@ def main():
                 count = 0
                 while (count <= timeout):
                   time.sleep(1)
-                  vm_state = vm_get_state_by_name(server_url,one_auth,vm_name)  
+                  vm_state = vm_get_state_by_name(server_url,one_auth,vm_name)
                   if vm_status[0] == True and vm_state == one_vm_states['ACTIVE'] and count <= timeout:
                       module.exit_json(changed=True, vm_deleted=vm_status[0], vm_name=vm_name, vm_id=vm_status[1], vm_state='STARTED')
                       break
                   elif vm_state != one_vm_states['ACTIVE'] and count == timeout:
-                      vm_state_text =  one_vm_states.keys()[one_vm_states.values().index(vm_state)]
-                      print_msg = '{0} {1}'.format('The VM action timed out please check opennebula UI,current VM state is',vm_state_text)
-                      module.fail_json(msg=print_msg)
-                      break
+                      if vm_state in one_vm_states:
+                          vm_state_text =  one_vm_states.keys()[one_vm_states.values().index(vm_state)]
+                          print_msg = '{0} {1}'.format('The VM action timed out please check opennebula UI,current VM state is',vm_state_text)
+                          module.fail_json(msg=print_msg)
+                          break
+                      else:
+                          print_msg = '{0} {1}'.format(vm_status[0],vm_status[1])
+                          module.fail_json(msg=print_msg)
+                          break
                   count += 1
- 
+
             else:
                 module.exit_json(changed=False, vm_name=vm_name, vm_state='STARTED')
         else:
             module.fail_json(msg="VM does not exist in opennebula")
-     
+
     if state in ["restarted", "restart", "reboot"]:
         if vm_pool_get_id_by_name(server_url,one_auth,vm_name) != None:
 
             if vm_get_state_by_name(server_url,one_auth,vm_name) == one_vm_states['HOLD']:
                 module.exit_json(changed=False, vm_name=vm_name, vm_state='HOLD')
-     
+
             elif vm_get_state_by_name(server_url,one_auth,vm_name) == one_vm_states['ACTIVE']:
                 vm_status = vm_reboot(server_url,one_auth,vm_name)
                 count = 0
@@ -506,11 +525,16 @@ def main():
                   if vm_status[0] == True and vm_state == one_vm_states['ACTIVE'] and count <= timeout:
                       module.exit_json(changed=True, vm_restarted=vm_status[0], vm_name=vm_name, vm_id=vm_status[1], vm_state='RESTARTED')
                   elif vm_state != one_vm_states['ACTIVE'] and count == timeout:
-                      vm_state_text =  one_vm_states.keys()[one_vm_states.values().index(vm_state)]
-                      print_msg = '{0} {1}'.format('The VM action timed out please check opennebula UI,current VM state is',vm_state_text)
-                      module.fail_json(msg=print_msg)
+                      if vm_state in one_vm_states:
+                          vm_state_text =  one_vm_states.keys()[one_vm_states.values().index(vm_state)]
+                          print_msg = '{0} {1}'.format('The VM action timed out please check opennebula UI,current VM state is',vm_state_text)
+                          module.fail_json(msg=print_msg)
+                      else:
+                          print_msg = '{0} {1}'.format(vm_status[0],vm_status[1])
+                          module.fail_json(msg=print_msg)
+                          break
                   count += 1
- 
+
             else:
                 module.fail_json(msg="VM not in valid state , it should be ACTIVE(3)")
         else:
