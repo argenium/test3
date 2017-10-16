@@ -1,30 +1,33 @@
 #!/usr/bin/python
 
 from ansible.module_utils.basic import AnsibleModule
-from pyhive import hive
-from TCLIService.ttypes import TOperationState
+from impala.dbapi import connect
 
 DOCUMENTATION = '''
 ---
-module: hive
+module: impala
 
-short_description: Run a sql file in Hive
+short_description: Run a sql file in Impala
 
 description:
-    - "Run a sql file in Hive"
+    - "Run a sql files in Impala asynchronously"
 
 options:
     host:
         description:
-            - Hive host
+            - Impala host
         required: true
     port:
         description:
-            - Hive port
+            - Impala port
         required: false
     database:
         description:
-            - Hive database
+            - Impala database
+        required: false
+    user:
+        description:
+            - Impala user
         required: false
     files:
         description:
@@ -33,7 +36,7 @@ options:
 
 requirements:
   - "python >= 2.7"
-  - "pyhive[hive] >= 0.2.1"
+  - "impyla >= 0.14.0"
 
 author:
     - Vanessa Vuibert (@vvuibert)
@@ -42,11 +45,12 @@ author:
 EXAMPLES = '''
 # Test a sql file
 - name: Test sql file
-  hive:
+  impala:
     host: "data012-vip-01.devops.guavus.mtl"
-    port: "10000"
+    port: 21050
     database: "carereflex"
-    files: ["/opt/guavus/carereflex/srx-data/schemas/hive/test.sql"]
+    user: "impala"
+    files: ["/opt/guavus/carereflex/srx-data/schemas/impala/test.sql"]
 '''
 
 RETURN = '''
@@ -59,8 +63,9 @@ sql_queries:
 def run_module():
     module_args = dict(
         host=dict(type='str', required=True),
-        port=dict(type='int', required=False, default=10000),
+        port=dict(type='int', required=False, default=21050),
         database=dict(type='str', required=False, default='default'),
+        user=dict(type='str', required=False, default='impala'),
         files=dict(type='list', required=True)
     )
 
@@ -77,12 +82,17 @@ def run_module():
     if ansible_module.check_mode:
         return result
 
+    connection = None
     cursor = None
     try:
-        cursor = hive.connect(
+        connection = connect(
             host=ansible_module.params['host'],
             port=ansible_module.params['port'],
-            database=ansible_module.params['database']).cursor()
+            database=ansible_module.params['database'],
+            user=ansible_module.params['user'],
+            auth_mechanism="NOSASL"
+        )
+        cursor = connection.cursor(user=ansible_module.params['user'])
         for file in ansible_module.params['files']:
             with open(file, 'r') as file_handle:
                 queries = file_handle.read()
@@ -90,11 +100,9 @@ def run_module():
                     clean_query = query.strip()
                     if clean_query:
                         result['sql_queries'].append(clean_query)
-                        cursor.execute(clean_query)
+                        cursor.execute_async(clean_query)
 
-        while cursor.poll().operationState in (
-                TOperationState.INITIALIZED_STATE,
-                TOperationState.RUNNING_STATE):
+        while cursor.is_executing():
             time.sleep(1)
 
         result['changed'] = True
@@ -103,6 +111,9 @@ def run_module():
     finally:
         if cursor:
             cursor.close()
+        if connection:
+            connection.close()
+
     ansible_module.exit_json(**result)
 
 
