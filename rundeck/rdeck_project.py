@@ -123,9 +123,9 @@ except ImportError:
     HAS_REQUESTS = False
 
 def rundeck_user_validation(url,api_version,headers,module):
-    api_user_info_url = '{0}/api/{1}/user/info/'.format(url,api_version)
+    api_system_info_url = '{0}/api/{1}/system/info/'.format(url,api_version)
     try:
-        r = requests.get(api_user_info_url, headers=headers)
+        r = requests.get(api_system_info_url, headers=headers)
         if r.status_code == requests.codes.ok:
             pass
         else:
@@ -139,7 +139,7 @@ def rundeck_create_project(url,api_version,headers,project_name,project_definiti
     # api urls 
     api_check_project_url = '{0}/api/{1}/project/{2}'.format(url,api_version,project_name)
     api_create_project_url = '{0}/api/{1}/projects'.format(url,api_version)
-    api_project_resource_url = '{0}/api/{1}/projects/resources'.format(url,api_version)
+    api_project_resource_url = '{0}/api/{1}/projects/{2}/resources'.format(url,api_version,project_name)
 
     try:
         p_chk = requests.get(api_check_project_url, headers=headers)
@@ -191,7 +191,7 @@ def rundeck_update_project(url,api_version,headers,project_name,project_definiti
     api_check_project_url = '{0}/api/{1}/project/{2}'.format(url,api_version,project_name)
     api_create_project_url = '{0}/api/{1}/projects'.format(url,api_version)
     api_delete_project_url = '{0}/api/{1}/project/{2}'.format(url,api_version,project_name)
-    api_project_resource_url = '{0}/api/{1}/projects/resources'.format(url,api_version)
+    api_project_resource_url = '{0}/api/{1}/projects/{2}/resources'.format(url,api_version,project_name)
     
     try:
         p_chk = requests.get(api_check_project_url, headers=headers)

@@ -131,9 +131,9 @@ except ImportError:
     HAS_REQUESTS = False
 
 def rundeck_user_validation(url,api_version,headers,module):
-    api_user_info_url = '{0}/api/{1}/user/info/'.format(url,api_version)
+    api_system_info_url = '{0}/api/{1}/system/info/'.format(url,api_version)
     try:
-        r = requests.get(api_user_info_url, headers=headers)
+        r = requests.get(api_system_info_url, headers=headers)
         if r.status_code == requests.codes.ok: 
             pass
         else:
