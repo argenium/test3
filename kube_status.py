@@ -63,6 +63,8 @@ def run_module():
         ready=True
     )
 
+    pods_fail_statuses = dict()
+
     ansible_module = AnsibleModule(
         argument_spec=module_args,
         supports_check_mode=True
@@ -76,30 +78,38 @@ def run_module():
         for pod in client.CoreV1Api().list_namespaced_pod(
                 namespace=ansible_module.params['namespace'],
                 label_selector=ansible_module.params['label_selector']).items:
+            container_statuses = dict()
+            container_failed_statuses = dict()
+            if pod.status.container_statuses:
+                for status in pod.status.container_statuses:
+                    if status.state.running:
+                        container_state = {'running': status.state.running.to_dict()}
+                    elif status.state.waiting:
+                        container_state = {'waiting': status.state.waiting.to_dict()}
+                    else:
+                        container_state = {'terminated': status.state.terminated.to_dict()}
+                    container_statuses[status.name] = container_state
 
-            container_statuses = []
-            for status in pod.status.container_statuses:
-                if status.state.running:
-                    container_state = {'running': status.state.running.to_dict()}
-                elif status.state.waiting:
-                    container_state = {'waiting': status.state.waiting.to_dict()}
-                else:
-                    container_state = {'terminated': status.state.terminated.to_dict()}
-                container_statuses.append({
-                    "name": status.name,
-                    "status": container_state}
-                )
-                if not status.ready:
-                    result['ready'] = False
-                    if status.state.terminated and (status.state.waiting.reason in BAD_REASONS):
-                        ansible_module.fail_json(msg=str(status.state.terminated.message))
-                    elif status.state.waiting and (status.state.waiting.reason in BAD_REASONS):
-                        ansible_module.fail_json(msg=str(status.state.waiting.message))
+                    if not status.ready:
+                        result['ready'] = False
+                        if (status.state.terminated and (status.state.terminated.reason in BAD_REASONS)) or \
+                                (status.state.waiting and (status.state.waiting.reason in BAD_REASONS)):
+                            container_failed_statuses[status.name] = container_state
+            else:
+                container_failed_statuses = pod.status.to_dict()
+
             result['container_statuses'][pod.metadata.name] = container_statuses
+            if container_failed_statuses:
+                pods_fail_statuses[pod.metadata.name] = container_failed_statuses
 
         result['changed'] = True
+        if pods_fail_statuses:
+            ansible_module.fail_json(msg="At least one pod is failing",
+                                     container_statuses=pods_fail_statuses,
+                                     ready=False, changed=True)
     except Exception as e:
-        ansible_module.fail_json(msg=str(e))
+        result['ready'] = False
+        ansible_module.fail_json(msg=str(e), ready=False, changed=True)
 
     ansible_module.exit_json(**result)
 
