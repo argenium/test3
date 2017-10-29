@@ -72,7 +72,7 @@ options:
     required: True
 requirements:
   - "python >= 2.7"
-  - "requests == 2.18.4"
+  - "requests >= 2.13.0"
 
 author:
   - onkar.kadam@guavus.com

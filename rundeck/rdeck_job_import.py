@@ -79,7 +79,7 @@ options:
 
 requirements:
   - "python >= 2.7"
-  - "requests == 2.18.4"
+  - "requests >= 2.13.0"
 
 author:
   - onkar.kadam@guavus.com
@@ -168,13 +168,12 @@ def rundeck_create_job(url,api_version,headers,project,job_name,job_definition,j
              module.exit_json(changed=False, meta=jb_response[0])
         else:
             jb_create = requests.post(api_job_create_url, headers=headers, data=job_definition)
-            if jb_create.status_code == requests.codes.ok:
-                jb_create_resp = jb_create.json()
-                module.exit_json(changed=True, meta=jb_create_resp)
+            jb_create_resp = jb_create.json()
+            if jb_create.status_code == requests.codes.ok and not jb_create_resp['succeeded'] == []:
+                module.exit_json(changed=True, meta=jb_create_resp['succeeded'])
             else:
-                err_msg = 'return status code {0}'.format(r.status_code)
-                jb_create_resp = jb_create.json()
-                module.fail_json(msg=err_msg, meta=jb_create_resp)
+                err_msg = 'return status code {0}'.format(jb_create.status_code)
+                module.fail_json(msg=err_msg, meta=jb_create_resp['failed'])
     except Exception as e:
         module.fail_json(msg=str(e))
 
@@ -212,25 +211,24 @@ def rundeck_update_job(url,api_version,headers,project,job_name,job_definition,j
             jb_del = requests.delete(api_job_delete_url, headers=headers)
             if jb_del.status_code == requests.codes.no_content:
                 jb_create = requests.post(api_job_create_url, headers=headers, data=job_definition)
-                if jb_create.status_code == requests.codes.ok:
-                    jb_create_resp = jb_create.json()
-                    module.exit_json(changed=True, meta=jb_create_resp)
+                jb_create_resp = jb_create.json()
+                if jb_create.status_code == requests.codes.ok and not jb_create_resp['succeeded'] == []:
+                    module.exit_json(changed=True, meta=jb_create_resp['succeeded'])
                 else:
-                    err_msg = 'return status code {0}'.format(r.status_code)
+                    err_msg = 'return status code {0}'.format(jb_create.status_code)
                     jb_create_resp = jb_create.json()
-                    module.fail_json(msg=err_msg, meta=jb_create_resp)
+                    module.fail_json(msg=err_msg, meta=jb_create_resp['failed'])
             else:
                 err_msg = 'return status code {0}'.format(jb_del.status_code)
                 module.fail_json(msg=err_msg)
         else:
             jb_create = requests.post(api_job_create_url, headers=headers, data=job_definition)
-            if jb_create.status_code == requests.codes.ok:
-                jb_create_resp = jb_create.json()
-                module.exit_json(changed=True, meta=jb_create_resp)
+            jb_create_resp = jb_create.json()
+            if jb_create.status_code == requests.codes.ok and not jb_create_resp['succeeded'] == []:
+                module.exit_json(changed=True, meta=jb_create_resp['succeeded'])
             else:
-                err_msg = 'return status code {0}'.format(r.status_code)
-                jb_create_resp = jb_create.json()
-                module.fail_json(msg=err_msg, meta=jb_create_resp)
+                err_msg = 'return status code {0}'.format(jb_create.status_code)
+                module.fail_json(msg=err_msg, meta=jb_create_resp['failed'])
     except Exception as e:
         module.fail_json(msg=str(e))
 
