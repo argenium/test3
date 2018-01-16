@@ -1,16 +1,23 @@
 #!/usr/bin/python
+import time
 
 from ansible.module_utils.basic import AnsibleModule
-from impala.dbapi import connect
+
+try:
+    from impala.dbapi import connect
+    from impala import error
+    HAS_LIB_IMPALA = True
+except ImportError:
+    HAS_LIB_IMPALA = False
 
 DOCUMENTATION = '''
 ---
 module: impala
 
-short_description: Run a sql file in Impala
+short_description: Run sql queries in Impala
 
 description:
-    - "Run a sql files in Impala asynchronously"
+    - "Run sql queries in Impala"
 
 options:
     host:
@@ -31,8 +38,12 @@ options:
         required: false
     files:
         description:
-            - List of files containing ';' separated sql queries
-        required: true
+            - List of files containing ';' separated sql queries to be ran asynchronously
+              This option is mutually exclusive with C('inline_query').
+    inline_query:
+        description:
+            - Inline sql query
+              This option is mutually exclusive with C('files_reference').
 
 requirements:
   - "python >= 2.7"
@@ -46,17 +57,29 @@ EXAMPLES = '''
 # Test a sql file
 - name: Test sql file
   impala:
-    host: "data012-vip-01.devops.guavus.mtl"
+    host: "data018-vip-01.devops.guavus.mtl"
     port: 21050
     database: "carereflex"
     user: "impala"
     files: ["/opt/guavus/carereflex/srx-data/schemas/impala/test.sql"]
+
+# Test a sql query
+- name: Test sql file
+  impala:
+    host: "data018-vip-01.devops.guavus.mtl"
+    port: 21050
+    database: "carereflex"
+    user: "impala"
+    inline_query: "SHOW TABLES"
 '''
 
 RETURN = '''
 sql_queries:
     description: List of queries that were ran
     type: list
+sql_result:
+    description: Result for C('inline_query')
+    type: str
 '''
 
 
@@ -66,18 +89,25 @@ def run_module():
         port=dict(type='int', required=False, default=21050),
         database=dict(type='str', required=False, default='default'),
         user=dict(type='str', required=False, default='impala'),
-        files=dict(type='list', required=True)
+        files=dict(type='list'),
+        inline_query=dict(type='str')
     )
 
     result = dict(
         changed=False,
-        sql_queries=[]
+        sql_queries=[],
+        sql_result=None
     )
 
     ansible_module = AnsibleModule(
         argument_spec=module_args,
+        mutually_exclusive=[('files', 'inline_query')],
+        required_one_of=[('files', 'inline_query')],
         supports_check_mode=True
     )
+
+    if not HAS_LIB_IMPALA:
+        ansible_module.fail_json(msg="missing python library: impyla")
 
     if ansible_module.check_mode:
         return result
@@ -93,21 +123,35 @@ def run_module():
             auth_mechanism="NOSASL"
         )
         cursor = connection.cursor(user=ansible_module.params['user'])
-        for file in ansible_module.params['files']:
-            with open(file, 'r') as file_handle:
-                queries = file_handle.read()
-                for query in queries.split(";"):
-                    clean_query = query.strip()
-                    if clean_query:
-                        result['sql_queries'].append(clean_query)
-                        cursor.execute_async(clean_query)
+        if ansible_module.params['inline_query']:
+            clean_query = ansible_module.params['inline_query'].strip()
+            result['sql_queries'].append(clean_query)
+            try:
+                cursor.execute(clean_query)
+                if cursor.has_result_set:
+                    result['sql_result'] = cursor.fetchall()
+            except error.HiveServer2Error as e:
+                ansible_module.fail_json(msg=str(e), sql_query=clean_query, changed=True)
+        else:
+            for file_name in ansible_module.params['files']:
+                with open(file_name, 'r') as file_handle:
+                    queries = file_handle.read()
+                    for query in queries.split(";"):
+                        clean_query = query.strip()
+                        if clean_query:
+                            result['sql_queries'].append(clean_query)
+                            try:
+                                cursor.execute_async(clean_query)
+                            except error.HiveServer2Error as e:
+                                ansible_module.fail_json(msg=str(e), sql_query=clean_query,
+                                                         file=file_name, changed=True)
 
-        while cursor.is_executing():
-            time.sleep(1)
+            while cursor.is_executing():
+                time.sleep(1)
 
         result['changed'] = True
     except Exception as e:
-        ansible_module.fail_json(msg=str(e))
+        ansible_module.fail_json(msg=str(e), changed=True)
     finally:
         if cursor:
             cursor.close()

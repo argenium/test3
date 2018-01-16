@@ -8,7 +8,7 @@ DOCUMENTATION = '''
 ---
 module: hive
 
-short_description: Run a sql file in Hive
+short_description: Run a sql file or sql queries in Hive
 
 description:
     - "Run a sql file in Hive"
@@ -26,10 +26,20 @@ options:
         description:
             - Hive database
         required: false
+    extra_settings:
+        description:
+            - Hive settings need to run before executing queries
+        required: false
     files:
         description:
             - List of files containing ';' separated sql queries
-        required: true
+            This option is mutually exclusive with C('inline_query').
+        required: false
+    inline_query:
+        description:
+            - Inline sql query
+              This option is mutually exclusive with C('files').
+        required: false
 
 requirements:
   - "python >= 2.7"
@@ -47,11 +57,25 @@ EXAMPLES = '''
     port: "10000"
     database: "carereflex"
     files: ["/opt/guavus/carereflex/srx-data/schemas/hive/test.sql"]
+
+# Test a sql query
+- name: Test sql query
+  hive:
+    host: "data012-vip-01.devops.guavus.mtl"
+    port: 10000
+    database: "carereflex"
+    inline_query: "SHOW TABLES"
 '''
 
 RETURN = '''
 sql_queries:
     description: List of queries that were ran
+    type: list
+sql_result:
+    description: Result for C('inline_query')
+    type: str
+sql_settings:
+    description: List of settings that were ran
     type: list
 '''
 
@@ -61,16 +85,22 @@ def run_module():
         host=dict(type='str', required=True),
         port=dict(type='int', required=False, default=10000),
         database=dict(type='str', required=False, default='default'),
-        files=dict(type='list', required=True)
+        extra_settings=dict(type='list', required=False),
+        files=dict(type='list', required=False),
+        inline_query=dict(type='str', required=False)
     )
 
     result = dict(
         changed=False,
-        sql_queries=[]
+        sql_queries=[],
+        sql_settings=[],
+        sql_result=None
     )
 
     ansible_module = AnsibleModule(
         argument_spec=module_args,
+        mutually_exclusive=[('files', 'inline_query')],
+        required_one_of=[('files', 'inline_query')],
         supports_check_mode=True
     )
 
@@ -83,14 +113,25 @@ def run_module():
             host=ansible_module.params['host'],
             port=ansible_module.params['port'],
             database=ansible_module.params['database']).cursor()
-        for file in ansible_module.params['files']:
-            with open(file, 'r') as file_handle:
-                queries = file_handle.read()
-                for query in queries.split(";"):
-                    clean_query = query.strip()
-                    if clean_query:
-                        result['sql_queries'].append(clean_query)
-                        cursor.execute(clean_query)
+        if ansible_module.params['extra_settings']:
+            for setting in ansible_module.params['extra_settings']:
+                cursor.execute(setting)
+                result['sql_settings'].append(setting)
+        if ansible_module.params['inline_query']:
+            clean_query = ansible_module.params['inline_query'].strip()
+            result['sql_queries'].append(clean_query)
+            rows = cursor.execute(clean_query)
+            if rows > 0:
+                result['sql_result'] = cursor.fetchall()
+        else:
+            for file in ansible_module.params['files']:
+                with open(file, 'r') as file_handle:
+                    queries = file_handle.read()
+                    for query in queries.split(";"):
+                        clean_query = query.strip()
+                        if clean_query:
+                            result['sql_queries'].append(clean_query)
+                            cursor.execute(clean_query)
 
         while cursor.poll().operationState in (
                 TOperationState.INITIALIZED_STATE,
