@@ -1,8 +1,12 @@
 #!/usr/bin/python
 
 from ansible.module_utils.basic import AnsibleModule
-from pyhive import hive
-from TCLIService.ttypes import TOperationState
+try:
+    from pyhive import hive, exc
+    from TCLIService.ttypes import TOperationState
+    HAS_LIB_HIVE = True
+except ImportError:
+    HAS_LIB_HIVE = False
 
 DOCUMENTATION = '''
 ---
@@ -30,7 +34,7 @@ options:
         description:
             - Hive settings need to run before executing queries
         required: false
-    files:
+    files_reference:
         description:
             - List of files containing ';' separated sql queries
             This option is mutually exclusive with C('inline_query').
@@ -38,7 +42,7 @@ options:
     inline_query:
         description:
             - Inline sql query
-              This option is mutually exclusive with C('files').
+              This option is mutually exclusive with C('files_reference').
         required: false
 
 requirements:
@@ -56,7 +60,7 @@ EXAMPLES = '''
     host: "data012-vip-01.devops.guavus.mtl"
     port: "10000"
     database: "carereflex"
-    files: ["/opt/guavus/carereflex/srx-data/schemas/hive/test.sql"]
+    files_reference: ["/opt/guavus/carereflex/srx-data/schemas/hive/test.sql"]
 
 # Test a sql query
 - name: Test sql query
@@ -86,7 +90,7 @@ def run_module():
         port=dict(type='int', required=False, default=10000),
         database=dict(type='str', required=False, default='default'),
         extra_settings=dict(type='list', required=False),
-        files=dict(type='list', required=False),
+        files_reference=dict(type='list', required=False),
         inline_query=dict(type='str', required=False)
     )
 
@@ -99,10 +103,13 @@ def run_module():
 
     ansible_module = AnsibleModule(
         argument_spec=module_args,
-        mutually_exclusive=[('files', 'inline_query')],
-        required_one_of=[('files', 'inline_query')],
+        mutually_exclusive=[('files_reference', 'inline_query')],
+        required_one_of=[('files_reference', 'inline_query')],
         supports_check_mode=True
     )
+
+    if not HAS_LIB_HIVE:
+        ansible_module.fail_json(msg="missing python library: pyhive[hive]")
 
     if ansible_module.check_mode:
         return result
@@ -124,7 +131,7 @@ def run_module():
             if rows > 0:
                 result['sql_result'] = cursor.fetchall()
         else:
-            for file in ansible_module.params['files']:
+            for file in ansible_module.params['files_reference']:
                 with open(file, 'r') as file_handle:
                     queries = file_handle.read()
                     for query in queries.split(";"):

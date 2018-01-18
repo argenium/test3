@@ -1,8 +1,12 @@
 #!/usr/bin/python
 
 from ansible.module_utils.basic import AnsibleModule
-from psycopg2 import connect
-from psycopg2.extras import wait_select
+try:
+    from psycopg2 import connect, Error
+    from psycopg2.extras import wait_select
+    HAS_LIB_POSTGRES = True
+except ImportError:
+    HAS_LIB_POSTGRES = False
 
 DOCUMENTATION = '''
 ---
@@ -34,7 +38,7 @@ options:
         description:
             - Postgres password
         required: false
-    files:
+    files_reference:
         description:
             - List of files containing ';' separated sql queries
         required: true
@@ -56,7 +60,7 @@ EXAMPLES = '''
     database: "carereflex"
     user: "postgres"
     password: "postgres"
-    files: ["/opt/guavus/carereflex/srx-data/schemas/postgres/test.sql"]
+    files_reference: ["/opt/guavus/carereflex/srx-data/schemas/postgres/test.sql"]
 '''
 
 RETURN = '''
@@ -73,7 +77,7 @@ def run_module():
         database=dict(type='str', required=False, default=None),
         user=dict(type='str', required=False, default='postgres'),
         password=dict(type='str', required=False, default='postgres'),
-        files=dict(type='list', required=True)
+        files_reference=dict(type='list', required=True)
     )
 
     result = dict(
@@ -85,6 +89,9 @@ def run_module():
         argument_spec=module_args,
         supports_check_mode=True
     )
+
+    if not HAS_LIB_POSTGRES:
+        ansible_module.fail_json(msg="missing python library: psycopg2")
 
     if ansible_module.check_mode:
         return result
@@ -102,7 +109,7 @@ def run_module():
         )
         wait_select(connection)
         cursor = connection.cursor()
-        for file in ansible_module.params['files']:
+        for file in ansible_module.params['files_reference']:
             with open(file, 'r') as file_handle:
                 queries = file_handle.read()
                 for query in queries.split(";"):

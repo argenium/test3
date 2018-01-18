@@ -36,7 +36,7 @@ options:
         description:
             - Impala user
         required: false
-    files:
+    files_reference:
         description:
             - List of files containing ';' separated sql queries to be ran asynchronously
               This option is mutually exclusive with C('inline_query').
@@ -61,7 +61,7 @@ EXAMPLES = '''
     port: 21050
     database: "carereflex"
     user: "impala"
-    files: ["/opt/guavus/carereflex/srx-data/schemas/impala/test.sql"]
+    files_reference: ["/opt/guavus/carereflex/srx-data/schemas/impala/test.sql"]
 
 # Test a sql query
 - name: Test sql file
@@ -89,7 +89,7 @@ def run_module():
         port=dict(type='int', required=False, default=21050),
         database=dict(type='str', required=False, default='default'),
         user=dict(type='str', required=False, default='impala'),
-        files=dict(type='list'),
+        files_reference=dict(type='list'),
         inline_query=dict(type='str')
     )
 
@@ -101,8 +101,8 @@ def run_module():
 
     ansible_module = AnsibleModule(
         argument_spec=module_args,
-        mutually_exclusive=[('files', 'inline_query')],
-        required_one_of=[('files', 'inline_query')],
+        mutually_exclusive=[('files_reference', 'inline_query')],
+        required_one_of=[('files_reference', 'inline_query')],
         supports_check_mode=True
     )
 
@@ -133,7 +133,7 @@ def run_module():
             except error.HiveServer2Error as e:
                 ansible_module.fail_json(msg=str(e), sql_query=clean_query, changed=True)
         else:
-            for file_name in ansible_module.params['files']:
+            for file_name in ansible_module.params['files_reference']:
                 with open(file_name, 'r') as file_handle:
                     queries = file_handle.read()
                     for query in queries.split(";"):
