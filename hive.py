@@ -2,6 +2,7 @@
 
 from ansible.module_utils.basic import AnsibleModule
 from pyhive import hive
+from pyhive import exc
 from TCLIService.ttypes import TOperationState
 
 DOCUMENTATION = '''
@@ -120,23 +121,25 @@ def run_module():
         if ansible_module.params['inline_query']:
             clean_query = ansible_module.params['inline_query'].strip()
             result['sql_queries'].append(clean_query)
-            rows = cursor.execute(clean_query)
-            if rows > 0:
+            cursor.execute(clean_query)
+            try:
                 result['sql_result'] = cursor.fetchall()
+            except exc.ProgrammingError:
+                pass
         else:
-            for file in ansible_module.params['files']:
-                with open(file, 'r') as file_handle:
+            for file_name in ansible_module.params['files']:
+                with open(file_name, 'r') as file_handle:
                     queries = file_handle.read()
                     for query in queries.split(";"):
                         clean_query = query.strip()
                         if clean_query:
                             result['sql_queries'].append(clean_query)
-                            cursor.execute(clean_query)
+                            cursor.execute(clean_query, async=True)
 
-        while cursor.poll().operationState in (
-                TOperationState.INITIALIZED_STATE,
-                TOperationState.RUNNING_STATE):
-            time.sleep(1)
+            while cursor.poll().operationState in (
+                    TOperationState.INITIALIZED_STATE,
+                    TOperationState.RUNNING_STATE):
+                time.sleep(1)
 
         result['changed'] = True
     except Exception as e:
