@@ -3,7 +3,6 @@
 from ansible.module_utils.basic import AnsibleModule
 try:
     from pyhive import hive, exc
-    from TCLIService.ttypes import TOperationState
     HAS_LIB_HIVE = True
 except ImportError:
     HAS_LIB_HIVE = False
@@ -140,12 +139,7 @@ def run_module():
                         clean_query = query.strip()
                         if clean_query:
                             result['sql_queries'].append(clean_query)
-                            cursor.execute(clean_query, async=True)
-
-            while cursor.poll().operationState in (
-                    TOperationState.INITIALIZED_STATE,
-                    TOperationState.RUNNING_STATE):
-                time.sleep(1)
+                            cursor.execute(clean_query)
 
         result['changed'] = True
     except Exception as e:

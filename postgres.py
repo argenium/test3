@@ -109,8 +109,8 @@ def run_module():
         )
         wait_select(connection)
         cursor = connection.cursor()
-        for file in ansible_module.params['files_reference']:
-            with open(file, 'r') as file_handle:
+        for file_name in ansible_module.params['files_reference']:
+            with open(file_name, 'r') as file_handle:
                 queries = file_handle.read()
                 for query in queries.split(";"):
                     clean_query = query.strip()
