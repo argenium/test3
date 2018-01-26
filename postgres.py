@@ -1,8 +1,12 @@
 #!/usr/bin/python
 
 from ansible.module_utils.basic import AnsibleModule
-from psycopg2 import connect
-from psycopg2.extras import wait_select
+try:
+    from psycopg2 import connect, Error
+    from psycopg2.extras import wait_select
+    HAS_LIB_POSTGRES = True
+except ImportError:
+    HAS_LIB_POSTGRES = False
 
 DOCUMENTATION = '''
 ---
@@ -86,6 +90,9 @@ def run_module():
         supports_check_mode=True
     )
 
+    if not HAS_LIB_POSTGRES:
+        ansible_module.fail_json(msg="missing python library: psycopg2")
+
     if ansible_module.check_mode:
         return result
 
@@ -102,8 +109,8 @@ def run_module():
         )
         wait_select(connection)
         cursor = connection.cursor()
-        for file in ansible_module.params['files']:
-            with open(file, 'r') as file_handle:
+        for file_name in ansible_module.params['files']:
+            with open(file_name, 'r') as file_handle:
                 queries = file_handle.read()
                 for query in queries.split(";"):
                     clean_query = query.strip()

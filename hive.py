@@ -1,9 +1,11 @@
 #!/usr/bin/python
 
 from ansible.module_utils.basic import AnsibleModule
-from pyhive import hive
-from pyhive import exc
-from TCLIService.ttypes import TOperationState
+try:
+    from pyhive import hive, exc
+    HAS_LIB_HIVE = True
+except ImportError:
+    HAS_LIB_HIVE = False
 
 DOCUMENTATION = '''
 ---
@@ -105,6 +107,9 @@ def run_module():
         supports_check_mode=True
     )
 
+    if not HAS_LIB_HIVE:
+        ansible_module.fail_json(msg="missing python library: pyhive[hive]")
+
     if ansible_module.check_mode:
         return result
 
@@ -134,12 +139,7 @@ def run_module():
                         clean_query = query.strip()
                         if clean_query:
                             result['sql_queries'].append(clean_query)
-                            cursor.execute(clean_query, async=True)
-
-            while cursor.poll().operationState in (
-                    TOperationState.INITIALIZED_STATE,
-                    TOperationState.RUNNING_STATE):
-                time.sleep(1)
+                            cursor.execute(clean_query)
 
         result['changed'] = True
     except Exception as e:
