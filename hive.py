@@ -28,12 +28,13 @@ options:
     database:
         description:
             - Hive database
+        default: default
         required: false
     extra_settings:
         description:
             - Hive settings need to run before executing queries
         required: false
-    files:
+    files_reference:
         description:
             - List of files containing ';' separated sql queries
             This option is mutually exclusive with C('inline_query').
@@ -41,7 +42,12 @@ options:
     inline_query:
         description:
             - Inline sql query
-              This option is mutually exclusive with C('files').
+              This option is mutually exclusive with C('files_reference').
+        required: false
+    app_name:
+        description:
+            - Application name for the YARN UI
+        default: Ansible Hive Module
         required: false
 
 requirements:
@@ -59,7 +65,7 @@ EXAMPLES = '''
     host: "data012-vip-01.devops.guavus.mtl"
     port: "10000"
     database: "carereflex"
-    files: ["/opt/guavus/carereflex/srx-data/schemas/hive/test.sql"]
+    files_reference: ["/opt/guavus/carereflex/srx-data/schemas/hive/test.sql"]
 
 # Test a sql query
 - name: Test sql query
@@ -78,8 +84,8 @@ sql_result:
     description: Result for C('inline_query')
     type: str
 sql_settings:
-    description: List of settings that were ran
-    type: list
+    description: Hive settings
+    type: dict
 '''
 
 
@@ -88,22 +94,23 @@ def run_module():
         host=dict(type='str', required=True),
         port=dict(type='int', required=False, default=10000),
         database=dict(type='str', required=False, default='default'),
-        extra_settings=dict(type='list', required=False),
-        files=dict(type='list', required=False),
-        inline_query=dict(type='str', required=False)
+        extra_settings=dict(type='dict', required=False),
+        files_reference=dict(type='list', required=False),
+        inline_query=dict(type='str', required=False),
+        app_name=dict(type='str', required=False, default='Ansible Hive Module')
     )
 
     result = dict(
         changed=False,
         sql_queries=[],
-        sql_settings=[],
+        sql_settings={},
         sql_result=None
     )
 
     ansible_module = AnsibleModule(
         argument_spec=module_args,
-        mutually_exclusive=[('files', 'inline_query')],
-        required_one_of=[('files', 'inline_query')],
+        mutually_exclusive=[('files_reference', 'inline_query')],
+        required_one_of=[('files_reference', 'inline_query')],
         supports_check_mode=True
     )
 
@@ -119,10 +126,12 @@ def run_module():
             host=ansible_module.params['host'],
             port=ansible_module.params['port'],
             database=ansible_module.params['database']).cursor()
+        conf_query = "SET {}={}"
+        cursor.execute(conf_query.format("spark.app.name", ansible_module.params['app_name']))
         if ansible_module.params['extra_settings']:
-            for setting in ansible_module.params['extra_settings']:
-                cursor.execute(setting)
-                result['sql_settings'].append(setting)
+            for key, value in ansible_module.params['extra_settings'].iteritems():
+                cursor.execute(conf_query.format(key, value))
+                result['sql_settings'][key] = value
         if ansible_module.params['inline_query']:
             clean_query = ansible_module.params['inline_query'].strip()
             result['sql_queries'].append(clean_query)
@@ -132,7 +141,7 @@ def run_module():
             except exc.ProgrammingError:
                 pass
         else:
-            for file_name in ansible_module.params['files']:
+            for file_name in ansible_module.params['files_reference']:
                 with open(file_name, 'r') as file_handle:
                     queries = file_handle.read()
                     for query in queries.split(";"):
