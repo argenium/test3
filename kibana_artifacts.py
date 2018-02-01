@@ -70,7 +70,7 @@ def upload_artifact(artifact, kibana_url, overwrite_existing):
             return False, False, "not-updated"
     else:
         # Error
-        return True, False, r.text
+        return True, False, r_create.text
 
 def upload_artifacts(kibana_url, artifacts_json, overwrite_existing):
 

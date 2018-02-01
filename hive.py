@@ -28,6 +28,7 @@ options:
     database:
         description:
             - Hive database
+        default: default
         required: false
     extra_settings:
         description:
@@ -42,6 +43,11 @@ options:
         description:
             - Inline sql query
               This option is mutually exclusive with C('files_reference').
+        required: false
+    app_name:
+        description:
+            - Application name for the YARN UI
+        default: Ansible Hive Module
         required: false
 
 requirements:
@@ -78,8 +84,8 @@ sql_result:
     description: Result for C('inline_query')
     type: str
 sql_settings:
-    description: List of settings that were ran
-    type: list
+    description: Hive settings
+    type: dict
 '''
 
 
@@ -88,15 +94,16 @@ def run_module():
         host=dict(type='str', required=True),
         port=dict(type='int', required=False, default=10000),
         database=dict(type='str', required=False, default='default'),
-        extra_settings=dict(type='list', required=False),
+        extra_settings=dict(type='dict', required=False),
         files_reference=dict(type='list', required=False),
-        inline_query=dict(type='str', required=False)
+        inline_query=dict(type='str', required=False),
+        app_name=dict(type='str', required=False, default='Ansible Hive Module')
     )
 
     result = dict(
         changed=False,
         sql_queries=[],
-        sql_settings=[],
+        sql_settings={},
         sql_result=None
     )
 
@@ -119,10 +126,12 @@ def run_module():
             host=ansible_module.params['host'],
             port=ansible_module.params['port'],
             database=ansible_module.params['database']).cursor()
+        conf_query = "SET {}={}"
+        cursor.execute(conf_query.format("spark.app.name", ansible_module.params['app_name']))
         if ansible_module.params['extra_settings']:
-            for setting in ansible_module.params['extra_settings']:
-                cursor.execute(setting)
-                result['sql_settings'].append(setting)
+            for key, value in ansible_module.params['extra_settings'].iteritems():
+                cursor.execute(conf_query.format(key, value))
+                result['sql_settings'][key] = value
         if ansible_module.params['inline_query']:
             clean_query = ansible_module.params['inline_query'].strip()
             result['sql_queries'].append(clean_query)
@@ -132,8 +141,8 @@ def run_module():
             except exc.ProgrammingError:
                 pass
         else:
-            for file in ansible_module.params['files_reference']:
-                with open(file, 'r') as file_handle:
+            for file_name in ansible_module.params['files_reference']:
+                with open(file_name, 'r') as file_handle:
                     queries = file_handle.read()
                     for query in queries.split(";"):
                         clean_query = query.strip()
