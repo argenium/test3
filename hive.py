@@ -1,5 +1,8 @@
 #!/usr/bin/python
 
+# Copyright (c) 2017 [Guavus]
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
 from ansible.module_utils.basic import AnsibleModule
 try:
     from pyhive import hive, exc
@@ -7,15 +10,19 @@ try:
 except ImportError:
     HAS_LIB_HIVE = False
 
+ANSIBLE_METADATA = {'metadata_version': '1.1',
+                    'status': ['preview'],
+                    'supported_by': 'community'}
+
 DOCUMENTATION = '''
 ---
 module: hive
-
 short_description: Run a sql file or sql queries in Hive
-
 description:
-    - "Run a sql file in Hive"
-
+    - Run a sql file in Hive
+author:
+    - Vanessa Vuibert (@vvuibert)
+version_added: "2.2"
 options:
     host:
         description:
@@ -28,8 +35,8 @@ options:
     database:
         description:
             - Hive database
-        default: default
         required: false
+        default: default
     extra_settings:
         description:
             - Hive settings need to run before executing queries
@@ -37,28 +44,25 @@ options:
     files_reference:
         description:
             - List of files containing ';' separated sql queries
-            This option is mutually exclusive with C('inline_query').
+            - This option is mutually exclusive with C('inline_query').
         required: false
     inline_query:
         description:
             - Inline sql query
-              This option is mutually exclusive with C('files_reference').
+            - This option is mutually exclusive with C('files_reference').
         required: false
     app_name:
         description:
             - Application name for the YARN UI
-        default: Ansible Hive Module
         required: false
-
+        default: Ansible Hive Module
 requirements:
   - "python >= 2.7"
   - "pyhive[hive] >= 0.2.1"
-
-author:
-    - Vanessa Vuibert (@vvuibert)
 '''
 
 EXAMPLES = '''
+---
 # Test a sql file
 - name: Test sql file
   hive:
@@ -77,14 +81,18 @@ EXAMPLES = '''
 '''
 
 RETURN = '''
+---
 sql_queries:
     description: List of queries that were ran
+    returned: success
     type: list
 sql_result:
     description: Result for C('inline_query')
-    type: str
+    returned: success
+    type: string
 sql_settings:
     description: Hive settings
+    returned: success
     type: dict
 '''
 

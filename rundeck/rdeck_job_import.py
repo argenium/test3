@@ -1,21 +1,15 @@
 #!/usr/bin/python
 #
 # Copyright 2017 Guavus - A Thales company
-#
-# This file is part of Guavus Infrastructure using Ansible
-#
-# Ansible is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# Ansible is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with Ansible.  If not, see <http://www.gnu.org/licenses/>.
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
+from ansible.module_utils.basic import AnsibleModule
+
+try:
+    import requests
+    HAS_REQUESTS = True
+except ImportError:
+    HAS_REQUESTS = False
 
 ANSIBLE_METADATA = {'metadata_version': '1.0',
                     'status': ['preview'],
@@ -27,66 +21,61 @@ module: rdeck_job_import
 
 short_description: Manage rundeck job creation and deletion.
 
-version_added: "2.2.0.0"
-
 description:
-     - Create, delete , update rundeck jobs using api
-
-options:
-  state:
-    description:
-      - when state is present -> create/import rundeck job
-      - when state is absent -> delete rundeck job
-      - when state is latest -> delete and recreate/import rundeck job
-    default: present
-    required: false
-    choices:
-      - present
-      - absent
-      - latest
-  url:
-    description:
-      - rundeck url in the form http://<rundeck_host>:<port>
-    required: true
-  project:
-    description:
-      - project  in wich job will be created
-    required: true
-  project_name:
-    description:
-      - project name to create
-    required: true
-  api_version:
-    description:
-      - rundeck api version
-    default: 21
-    required: false
-  job_definition:
-    description:
-      - job definition in yaml/xml format
-    required: True
-  job_format:
-    description:
-      - yaml or xml support
-    required: True
-    choices:
-      - yaml
-      - xml
-  token:
-    description
-      - api access token provided by rundeck server
-    required: True
-
-requirements:
-  - "python >= 2.7"
-  - "requests >= 2.13.0"
+    - Create, delete , update rundeck jobs using api
+     
+version_added: "2.2"
 
 author:
-  - onkar.kadam@guavus.com
+    - Onkar Kadam (@onkarkadam7)
+  
+options:
+    state:
+        description:
+            - when state is present -> create/import rundeck job
+            - when state is absent -> delete rundeck job
+            - when state is latest -> delete and recreate/import rundeck job
+        default: present
+        required: false
+        choices: ['present', 'absent', 'latest']
+    url:
+        description:
+            - rundeck url in the form http://<rundeck_host>:<port>
+        required: true
+    project:
+        description:
+            - project  in which job will be created
+        required: true
+    project_name:
+        description:
+            - project name to create
+        required: true
+    api_version:
+        description:
+            - rundeck api version
+        default: 21
+        required: false
+    job_definition:
+        description:
+            - job definition in yaml/xml format
+        required: True
+    job_format:
+        description:
+        - yaml or xml support
+        required: True
+        choices: ['yaml', 'xml']
+    token:
+        description:
+            - api access token provided by rundeck server
+        required: True
+
+requirements:
+    - "python >= 2.7"
+    - "requests >= 2.13.0"
 '''
 
 EXAMPLES = '''
-
+---
 - name: Create job
   rdeck_job_import:
     state: present
@@ -121,17 +110,16 @@ EXAMPLES = '''
     token: "tZe4sOnz4hk9ZEQBs4OmtJO3g5ahW4eR"
 '''
 
-from ansible.module_utils.basic import *
-import json
+RETURN = '''
+---
+meta:
+    description: result
+    type: dict
+'''
 
-try:
-    import requests
-    HAS_REQUESTS = True
-except ImportError:
-    HAS_REQUESTS = False
 
-def rundeck_user_validation(url,api_version,headers,module):
-    api_system_info_url = '{0}/api/{1}/system/info/'.format(url,api_version)
+def rundeck_user_validation(url, api_version, headers, ansible_module):
+    api_system_info_url = '{0}/api/{1}/system/info/'.format(url, api_version)
     try:
         r = requests.get(api_system_info_url, headers=headers)
         if r.status_code == requests.codes.ok: 
@@ -139,12 +127,13 @@ def rundeck_user_validation(url,api_version,headers,module):
         else:
             err_msg = 'return status code {0}'.format(r.status_code)
             response = r.json()
-            module.fail_json(msg=err_msg, meta=response)
+            ansible_module.fail_json(msg=err_msg, meta=response)
     except Exception as e:
-        module.fail_json(msg=str(e))
+        ansible_module.fail_json(msg=str(e))
 
-def rundeck_project_validation(url,api_version,headers,project,module):
-    api_project_url = '{0}/api/{1}/project/{2}'.format(url,api_version,project)
+
+def rundeck_project_validation(url, api_version, headers, project, ansible_module):
+    api_project_url = '{0}/api/{1}/project/{2}'.format(url, api_version, project)
     try:
         r = requests.get(api_project_url, headers=headers)
         if r.status_code == requests.codes.ok:
@@ -152,85 +141,91 @@ def rundeck_project_validation(url,api_version,headers,project,module):
         else:
             err_msg = 'return status code {0}'.format(r.status_code)
             response = r.json()
-            module.fail_json(msg=err_msg, meta=response)
+            ansible_module.fail_json(msg=err_msg, meta=response)
     except Exception as e:
-        module.fail_json(msg=str(e))
+        ansible_module.fail_json(msg=str(e))
 
-def rundeck_create_job(url,api_version,headers,project,job_name,job_definition,job_format,module):
+
+def rundeck_create_job(url, api_version, headers, project, job_name, job_definition, job_format, ansible_module):
     # api urls 
-    api_job_create_url = '{0}/api/{1}/project/{2}/jobs/import?fileformat={3}&dupeOption=update&uuidOption=remove'.format(url,api_version,project,job_format)
-    api_job_check_url = '{0}/api/{1}/project/{2}/jobs?jobExactFilter={3}'.format(url,api_version,project,job_name)
+    api_job_create_url = '{0}/api/{1}/project/{2}/jobs/import?fileformat={3}&dupeOption=update&uuidOption=remove'.format(
+        url, api_version, project, job_format)
+    api_job_check_url = '{0}/api/{1}/project/{2}/jobs?jobExactFilter={3}'.format(url, api_version, project, job_name)
 
     try:
         jb_chk = requests.get(api_job_check_url, headers=headers)
-        jb_response =  jb_chk.json()
+        jb_response = jb_chk.json()
         if not jb_response == [] and jb_response[0]['name'] == job_name:
-             module.exit_json(changed=False, meta=jb_response[0])
+            ansible_module.exit_json(changed=False, meta=jb_response[0])
         else:
             jb_create = requests.post(api_job_create_url, headers=headers, data=job_definition)
             jb_create_resp = jb_create.json()
             if jb_create.status_code == requests.codes.ok and not jb_create_resp['succeeded'] == []:
-                module.exit_json(changed=True, meta=jb_create_resp['succeeded'])
+                ansible_module.exit_json(changed=True, meta=jb_create_resp['succeeded'])
             else:
                 err_msg = 'return status code {0}'.format(jb_create.status_code)
-                module.fail_json(msg=err_msg, meta=jb_create_resp['failed'])
+                ansible_module.fail_json(msg=err_msg, meta=jb_create_resp['failed'])
     except Exception as e:
-        module.fail_json(msg=str(e))
+        ansible_module.fail_json(msg=str(e))
 
-def rundeck_delete_job(url,api_version,headers,project,job_name,module):
+
+def rundeck_delete_job(url, api_version, headers, project, job_name, ansible_module):
     # api url
-    api_job_check_url = '{0}/api/{1}/project/{2}/jobs?jobExactFilter={3}'.format(url,api_version,project,job_name)
+    api_job_check_url = '{0}/api/{1}/project/{2}/jobs?jobExactFilter={3}'.format(url, api_version, project, job_name)
 
     try:
         jb_chk = requests.get(api_job_check_url, headers=headers)
-        jb_response =  jb_chk.json()
+        jb_response = jb_chk.json()
         if not jb_response == [] and jb_response[0]['name'] == job_name:
-            jb_id =  jb_chk.json()[0]['id']
-            api_job_delete_url = '{0}/api/{1}/job/{2}'.format(url,api_version,jb_id)
+            jb_id = jb_chk.json()[0]['id']
+            api_job_delete_url = '{0}/api/{1}/job/{2}'.format(url, api_version, jb_id)
             jb_del = requests.delete(api_job_delete_url, headers=headers)
             if jb_del.status_code == requests.codes.no_content:
-               module.exit_json(changed=True, job_id=jb_id, job_name=job_name, state="absent")
+                ansible_module.exit_json(changed=True, job_id=jb_id, job_name=job_name, state="absent")
             else:
                 err_msg = 'return status code {0}'.format(jb_del.status_code)
-                module.fail_json(msg=err_msg)
+                ansible_module.fail_json(msg=err_msg)
         else:
-            module.exit_json(changed=False, job_id="null", job_name=job_name, state="absent")
+            ansible_module.exit_json(changed=False, job_id="null", job_name=job_name, state="absent")
     except Exception as e:
-        module.fail_json(msg=str(e))
+        ansible_module.fail_json(msg=str(e))
 
-def rundeck_update_job(url,api_version,headers,project,job_name,job_definition,job_format,module):
-    api_job_create_url = '{0}/api/{1}/project/{2}/jobs/import?fileformat={3}&dupeOption=update&uuidOption=remove'.format(url,api_version,project,job_format)
-    api_job_check_url = '{0}/api/{1}/project/{2}/jobs?jobExactFilter={3}'.format(url,api_version,project,job_name)
+
+def rundeck_update_job(url, api_version, headers, project, job_name, job_definition, job_format, ansible_module):
+    api_job_create_url = '{0}/api/{1}/project/{2}/jobs/import?fileformat={3}&dupeOption=update&uuidOption=remove'.format(
+        url, api_version, project, job_format)
+    api_job_check_url = '{0}/api/{1}/project/{2}/jobs?jobExactFilter={3}'.format(url, api_version, project, job_name)
 
     try:
         jb_chk = requests.get(api_job_check_url, headers=headers)
-        jb_response =  jb_chk.json()
+        jb_response = jb_chk.json()
         if not jb_response == [] and jb_response[0]['name'] == job_name:
-            jb_id =  jb_chk.json()[0]['id']
-            api_job_delete_url = '{0}/api/{1}/job/{2}'.format(url,api_version,jb_id)
+            jb_id = jb_chk.json()[0]['id']
+            api_job_delete_url = '{0}/api/{1}/job/{2}'.format(url, api_version, jb_id)
             jb_del = requests.delete(api_job_delete_url, headers=headers)
             if jb_del.status_code == requests.codes.no_content:
                 jb_create = requests.post(api_job_create_url, headers=headers, data=job_definition)
                 jb_create_resp = jb_create.json()
                 if jb_create.status_code == requests.codes.ok and not jb_create_resp['succeeded'] == []:
-                    module.exit_json(changed=True, meta=jb_create_resp['succeeded'])
+                    ansible_module.exit_json(changed=True, meta=jb_create_resp['succeeded'])
                 else:
                     err_msg = 'return status code {0}'.format(jb_create.status_code)
                     jb_create_resp = jb_create.json()
-                    module.fail_json(msg=err_msg, meta=jb_create_resp['failed'])
+                    ansible_module.fail_json(msg=err_msg, meta=jb_create_resp['failed'])
             else:
                 err_msg = 'return status code {0}'.format(jb_del.status_code)
-                module.fail_json(msg=err_msg)
+                ansible_module.fail_json(msg=err_msg)
         else:
             jb_create = requests.post(api_job_create_url, headers=headers, data=job_definition)
             jb_create_resp = jb_create.json()
             if jb_create.status_code == requests.codes.ok and not jb_create_resp['succeeded'] == []:
-                module.exit_json(changed=True, meta=jb_create_resp['succeeded'])
+                ansible_module.exit_json(changed=True, meta=jb_create_resp['succeeded'])
             else:
                 err_msg = 'return status code {0}'.format(jb_create.status_code)
-                module.fail_json(msg=err_msg, meta=jb_create_resp['failed'])
+                ansible_module.fail_json(msg=err_msg, meta=jb_create_resp['failed'])
     except Exception as e:
-        module.fail_json(msg=str(e))
+        ansible_module.fail_json(msg=str(e))
+
 
 def main():
     argument_spec = {
@@ -240,50 +235,50 @@ def main():
         "job_name": {"required": True, "type": "str"},
         "api_version": {"default": "20", "type": "int"},
         "job_definition": {"required": True, "type": "raw"},
-        "job_format": {"required": True, "type": "str" , "choices": ['yaml', 'xml']},
+        "job_format": {"required": True, "type": "str", "choices": ['yaml', 'xml']},
         "token": {"required": True, "type": "str", "no_log": True}
         }
 
-    module = AnsibleModule(argument_spec,supports_check_mode=True)
-    changed = False
+    ansible_module = AnsibleModule(argument_spec, supports_check_mode=True)
     # Get all module params
-    state = module.params['state']
-    url = module.params['url']
-    api_version = module.params['api_version']
-    project = module.params['project']
-    job_name = module.params['job_name']
-    job_definition = module.params['job_definition']
-    job_format = module.params['job_format']
-    token = module.params['token']
+    state = ansible_module.params['state']
+    url = ansible_module.params['url']
+    api_version = ansible_module.params['api_version']
+    project = ansible_module.params['project']
+    job_name = ansible_module.params['job_name']
+    job_definition = ansible_module.params['job_definition']
+    job_format = ansible_module.params['job_format']
+    token = ansible_module.params['token']
     job_content_type = 'application/{type}'.format(type=job_format)
 
-    headers = { "Content-Type": job_content_type,
-                "Accept": "application/json",
-                "X-Rundeck-Auth-Token": token }
+    headers = {"Content-Type": job_content_type,
+               "Accept": "application/json",
+               "X-Rundeck-Auth-Token": token}
 
-    if module.check_mode:
+    if ansible_module.check_mode:
         # psuedo check_mode
-        module.exit_json(changed=False)
+        ansible_module.exit_json(changed=False)
 
     if not HAS_REQUESTS:
-        module.fail_json(msg="requests module is not installed , use pip install requests")
+        ansible_module.fail_json(msg="requests module is not installed , use pip install requests")
 
-    if module.params["api_version"] < 20:
-        module.fail_json(msg="API version should be at least 20")
+    if ansible_module.params["api_version"] < 20:
+        ansible_module.fail_json(msg="API version should be at least 20")
 
     # Validate user token
-    rundeck_user_validation(url,api_version,headers,module)
+    rundeck_user_validation(url, api_version, headers, ansible_module)
     # Validate Project existence
-    rundeck_project_validation(url,api_version,headers,project,module)
+    rundeck_project_validation(url, api_version, headers, project, ansible_module)
 
     if state == 'present':
-        rundeck_create_job(url,api_version,headers,project,job_name,job_definition,job_format,module)
+        rundeck_create_job(url, api_version, headers, project, job_name, job_definition, job_format, ansible_module)
 
     elif state == 'absent':
-        rundeck_delete_job(url,api_version,headers,project,job_name,module)
+        rundeck_delete_job(url, api_version, headers, project, job_name, ansible_module)
 
     elif state == 'latest':
-        rundeck_update_job(url,api_version,headers,project,job_name,job_definition,job_format,module)
+        rundeck_update_job(url, api_version, headers, project, job_name, job_definition, job_format, ansible_module)
+
 
 # main
 if __name__ == '__main__':

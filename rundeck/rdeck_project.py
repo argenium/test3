@@ -1,21 +1,15 @@
 #!/usr/bin/python
 #
 # Copyright 2017 Guavus - A Thales company
-#
-# This file is part of Guavus Infrastructure using Ansible
-#
-# Ansible is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# Ansible is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with Ansible.  If not, see <http://www.gnu.org/licenses/>.
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
+from ansible.module_utils.basic import AnsibleModule
+
+try:
+    import requests
+    HAS_REQUESTS = True
+except ImportError:
+    HAS_REQUESTS = False
 
 ANSIBLE_METADATA = {'metadata_version': '1.0',
                     'status': ['preview'],
@@ -33,53 +27,53 @@ description:
      - Create, delete , update rundeck projects using api
 
 options:
-  state: 
-    description:
-      - when state is present -> create rundeck project
-      - when state is absent -> delete rundeck project
-      - when state is latest -> delete and recreate rundeck project 
-    default: present
-    required: false
-    choices:
-      - present
-      - absent
-      - latest
-  url:
-    description: 
-      - rundeck url in the form http://<rundeck_host>:<port>
-    required: true
-  project_name: 
-    description:
-      - project name to create
-    required: true
-  api_version:
-    description: 
-       - rundeck api version 
-    default: 21
-    required: false
-  project_definition: 
-    description:
-       - project definition in json format 
-    required: True     
-  project_format:
-    description: 
-     - currently this module only support json format
-    required: True
-    default: json
-  token:
-    description
-      - api access token provided by rundeck server
-    required: True
-requirements:
-  - "python >= 2.7"
-  - "requests >= 2.13.0"
+    state: 
+        description:
+            - when state is present -> create rundeck project
+            - when state is absent -> delete rundeck project
+            - when state is latest -> delete and recreate rundeck project 
+        default: present
+        required: false
+        choices:
+            - present
+            - absent
+            - latest
+    url:
+        description: 
+            - rundeck url in the form http://<rundeck_host>:<port>
+        required: true
+    project_name: 
+        description:
+            - project name to create
+        required: true
+    api_version:
+        description: 
+            - rundeck api version 
+        default: 21
+        required: false
+    project_definition: 
+        description:
+            - project definition in json format 
+        required: True     
+    project_format:
+        description: 
+            - currently this module only support json format
+        required: True
+        default: json
+    token:
+        description:
+            - api access token provided by rundeck server
+        required: True
+    requirements:
+        - "python >= 2.7"
+        - "requests >= 2.13.0"
 
 author:
-  - onkar.kadam@guavus.com
+    - Onkar Kadam (@onkarkadam7)
 '''
 
 EXAMPLES = '''
-
+---
 - name: Create Project
   rdeck_project:
     state: present
@@ -112,15 +106,12 @@ EXAMPLES = '''
     token: "tZe4sOnzasasasaewfewffdSDFas"
 '''
 
-
-from ansible.module_utils.basic import *
-import json
-
-try:
-    import requests
-    HAS_REQUESTS = True
-except ImportError:
-    HAS_REQUESTS = False
+RETURN = '''
+---
+meta:
+    description: result
+    type: dict
+'''
 
 def rundeck_user_validation(url,api_version,headers,module):
     api_system_info_url = '{0}/api/{1}/system/info/'.format(url,api_version)
@@ -134,6 +125,7 @@ def rundeck_user_validation(url,api_version,headers,module):
             module.fail_json(msg=err_msg, meta=response)
     except Exception as e:
         module.fail_json(msg=str(e))
+
 
 def rundeck_create_project(url,api_version,headers,project_name,project_definition,project_format,module):
     # api urls 
@@ -163,6 +155,7 @@ def rundeck_create_project(url,api_version,headers,project_name,project_definiti
     except Exception as e:
         module.fail_json(msg=str(e))
 
+
 def rundeck_delete_project(url,api_version,headers,project_name,module):
     # api_urls
     api_check_project_url = '{0}/api/{1}/project/{2}'.format(url,api_version,project_name)
@@ -185,6 +178,7 @@ def rundeck_delete_project(url,api_version,headers,project_name,module):
             module.fail_json(msg=err_msg, meta=p_chk_resp)
     except Exception as e:
         module.fail_json(msg=str(e))
+
 
 def rundeck_update_project(url,api_version,headers,project_name,project_definition,project_format,module):
     #simply delete and re-create
@@ -224,6 +218,7 @@ def rundeck_update_project(url,api_version,headers,project_name,project_definiti
     except Exception as e:
         module.fail_json(msg=str(e))
 
+
 def main():
     argument_spec = {
         "state": {"default": "present", "choices": ['present', 'absent', 'latest']},
@@ -231,7 +226,7 @@ def main():
         "project_name": {"required": True, "type": "str"},
         "api_version": {"default": "21", "type": "int"},
         "project_definition": {"required": True, "type": "json"},
-        "project_format": {"required": True, "type": "str" , "choices": ['json']},
+        "project_format": {"required": True, "type": "str", "choices": ['json']},
         "token": {"required": True, "type": "str", "no_log": True},
         }
 
@@ -272,6 +267,7 @@ def main():
 
     elif state == 'latest':
         rundeck_update_project(url,api_version,headers,project_name,project_definition,project_format,module)
+
 
 # main
 if __name__ == '__main__':
