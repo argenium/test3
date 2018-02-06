@@ -1,8 +1,19 @@
 #!/usr/bin/python
 
+# Copyright (c) 2017 [Guavus]
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
 from ansible.module_utils.basic import AnsibleModule
 
-from kubernetes import client, config
+try:
+    from kubernetes import client, config
+    HAS_LIB_KUBE = True
+except ImportError:
+    HAS_LIB_KUBE = False
+
+ANSIBLE_METADATA = {'metadata_version': '1.1',
+                    'status': ['preview'],
+                    'supported_by': 'community'}
 
 DOCUMENTATION = '''
 ---
@@ -49,6 +60,7 @@ ready:
 '''
 
 BAD_REASONS = ['CrashLoopBackOff', 'Error', 'ImagePullBackOff']
+BAD_PHASES = ['Failed', 'Unknown']
 
 
 def run_module():
@@ -69,6 +81,9 @@ def run_module():
         argument_spec=module_args,
         supports_check_mode=True
     )
+
+    if not HAS_LIB_KUBE:
+        ansible_module.fail_json(msg="missing python library: kubernetes")
 
     if ansible_module.check_mode:
         return result
@@ -96,7 +111,10 @@ def run_module():
                                 (status.state.waiting and (status.state.waiting.reason in BAD_REASONS)):
                             container_failed_statuses[status.name] = container_state
             else:
-                container_failed_statuses = pod.status.to_dict()
+                if pod.status.phase in BAD_PHASES:
+                    container_failed_statuses = pod.status.to_dict()
+                else:
+                    container_statuses = pod.status.to_dict()
 
             result['container_statuses'][pod.metadata.name] = container_statuses
             if container_failed_statuses:

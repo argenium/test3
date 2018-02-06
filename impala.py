@@ -1,4 +1,8 @@
 #!/usr/bin/python
+
+# Copyright (c) 2017 [Guavus]
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
 import time
 
 from ansible.module_utils.basic import AnsibleModule
@@ -9,6 +13,10 @@ try:
     HAS_LIB_IMPALA = True
 except ImportError:
     HAS_LIB_IMPALA = False
+
+ANSIBLE_METADATA = {'metadata_version': '1.1',
+                    'status': ['preview'],
+                    'supported_by': 'community'}
 
 DOCUMENTATION = '''
 ---

@@ -1,5 +1,8 @@
 #!/usr/bin/python
 
+# Copyright (c) 2017 [Guavus]
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
 from ansible.module_utils.basic import AnsibleModule
 try:
     from psycopg2 import connect, Error
@@ -7,6 +10,10 @@ try:
     HAS_LIB_POSTGRES = True
 except ImportError:
     HAS_LIB_POSTGRES = False
+
+ANSIBLE_METADATA = {'metadata_version': '1.1',
+                    'status': ['preview'],
+                    'supported_by': 'community'}
 
 DOCUMENTATION = '''
 ---
