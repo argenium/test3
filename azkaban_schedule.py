@@ -1,5 +1,8 @@
 #!/usr/bin/python
 
+# Copyright (c) 2017 [Guavus]
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
 from ansible.module_utils.basic import AnsibleModule
 
 try:
@@ -19,6 +22,10 @@ try:
     HAS_LIB_JSON = True
 except ImportError:
     HAS_LIB_JSON = False
+
+ANSIBLE_METADATA = {'metadata_version': '1.1',
+                    'status': ['preview'],
+                    'supported_by': 'community'}
 
 DOCUMENTATION = '''
 ---
@@ -72,12 +79,14 @@ options:
 requirements:
   - "python >= 2.7"
   - "requests >= 2.11.1"
+  - "pendulum > 1.0.0"
 
 author:
     - Vanessa Vuibert (@vvuibert)
 '''
 
 EXAMPLES = '''
+---
 - name: Get schedule
   azkaban_schedule:
     url: http://data018-vip-01.devops.guavus.mtl:8507
@@ -112,6 +121,7 @@ EXAMPLES = '''
 '''
 
 RETURN = '''
+---
 json:
     description: Azkaban schedule API call result
     type: dict

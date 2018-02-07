@@ -1,5 +1,8 @@
 #!/usr/bin/python
 
+# Copyright (c) 2017 [Guavus]
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
+
 from ansible.module_utils.basic import AnsibleModule
 from os.path import basename
 
@@ -20,6 +23,10 @@ try:
     HAS_LIB_JSON = True
 except ImportError:
     HAS_LIB_JSON = False
+
+ANSIBLE_METADATA = {'metadata_version': '1.1',
+                    'status': ['preview'],
+                    'supported_by': 'community'}
 
 DOCUMENTATION = '''
 ---
@@ -58,12 +65,12 @@ options:
     flow_name:
         description:
             - Execute this Azkaban flow.
-            This option is mutually exclusive with C('execution_id').
+            - This option is mutually exclusive with C('execution_id').
         required: false
     execution_id:
         description:
             - Get the status of this Azkaban execution id.
-            This option is mutually exclusive with C('flow_name').
+            - This option is mutually exclusive with C('flow_name').
         required: false
     op:
         description:
@@ -74,7 +81,7 @@ options:
     module_fail:
         description:
             - If True, this module will fail if the status of an execution is FAILED or KILLED.
-            This option is mutually exclusive with C('flow_name') and C('project').
+            - This option is mutually exclusive with C('flow_name') and C('project').
         required: false
 
 requirements:
@@ -86,6 +93,7 @@ author:
 '''
 
 EXAMPLES = '''
+---
 - name: List the flows in project srx-data
   azkaban_project:
     url: http://data018-vip-01.devops.guavus.mtl:8507
@@ -137,6 +145,7 @@ EXAMPLES = '''
 '''
 
 RETURN = '''
+---
 json:
     description: Azkaban API call result
     type: dict
