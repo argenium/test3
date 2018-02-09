@@ -125,6 +125,10 @@ RETURN = '''
 json:
     description: Azkaban schedule API call result
     type: dict
+params:
+    description: Parameters passed to this module
+    returned: failure
+    type: dict 
 '''
 
 
@@ -263,7 +267,7 @@ def run_module():
 
         result['changed'] = True
     except (requests.exceptions.RequestException, ValueError, Exception) as e:
-        ansible_module.fail_json(msg=str(e), changed=True)
+        ansible_module.fail_json(msg=str(e), changed=True, params=ansible_module.params)
     finally:
         if session:
             session.close()

@@ -149,6 +149,10 @@ RETURN = '''
 json:
     description: Azkaban API call result
     type: dict
+params:
+    description: Parameters passed to this module
+    returned: failure
+    type: dict 
 '''
 
 
@@ -193,11 +197,15 @@ def _execute_flow(session, url, project, flow_name):
 
 def _create_project(session, url, name, description):
     try:
-        create_project = session.post(url + "/manager?action=create",
-                                      params={"name": name,
-                                              "description": description}).json()
-        if create_project['status'] != 'success':
-            raise Exception('Failed to create project {}. Error: {}'.format(name, json.dumps(create_project)))
+        projects = _list_projects(session, url)
+        if not any(project['name'] == name for project in projects):
+            create_project = session.post(url + "/manager?action=create",
+                                          params={"name": name,
+                                                  "description": description}).json()
+            if create_project['status'] != 'success':
+                raise Exception('Failed to create project {}. Error: {}'.format(name, json.dumps(create_project)))
+        else:
+            create_project = _update_project(session, url, name, description)
         return create_project
     except (requests.exceptions.RequestException, ValueError) as e:
         raise Exception('Failed to create project {}. Error: {}'.format(name, str(e)))
@@ -211,11 +219,11 @@ def _delete_project(session, url, name):
         raise Exception('Failed to delete project {}. Error: {}'.format(name, str(e)))
 
 
+# session does not work to upload a file
 def _upload_project(session, url, project, file_name):
-    session.headers.clear()
     files = {'file': (basename(file_name), open(file_name, 'rb'), "application/zip")}
     try:
-        upload_project = session.post(url + "/manager", params={
+        upload_project = requests.post(url + "/manager", data={
             'session.id': session.cookies.get('azkaban.browser.session.id'),
             'ajax': 'upload',
             'project': project},
@@ -224,6 +232,22 @@ def _upload_project(session, url, project, file_name):
             Exception('Failed to upload file {}. Error: {}'.format(basename(file_name), upload_project['error']))
     except (requests.exceptions.RequestException, ValueError) as e:
         raise Exception('Failed to upload file {}. Error: {}'.format(basename(file_name), str(e)))
+
+
+def _list_projects(session, url):
+    try:
+        return session.post(url + "/manager?action=list").json()
+    except (requests.exceptions.RequestException, ValueError) as e:
+        raise Exception('Failed to list projects from {}. Error: {}'.format(url, str(e)))
+
+
+def _update_project(session, url, name, description):
+    try:
+        return session.get(url + "/manager?ajax=changeDescription",
+                           params={"project": name,
+                                   "description": description}).json()
+    except (requests.exceptions.RequestException, ValueError) as e:
+        raise Exception('Failed to update project {}. Error: {}'.format(name, str(e)))
 
 
 def run_module():
@@ -312,7 +336,7 @@ def run_module():
 
         result['changed'] = True
     except (requests.exceptions.RequestException, ValueError, Exception) as e:
-        ansible_module.fail_json(msg=str(e), changed=True)
+        ansible_module.fail_json(msg=str(e), changed=True, params=ansible_module.params)
     finally:
         if session:
             session.close()
