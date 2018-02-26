@@ -97,7 +97,7 @@ def run_module():
         port=dict(type='int', required=False, default=21050),
         database=dict(type='str', required=False, default='default'),
         user=dict(type='str', required=False, default='impala'),
-        files=dict(type='list'),
+        files_reference=dict(type='list'),
         inline_query=dict(type='str')
     )
 
@@ -109,8 +109,8 @@ def run_module():
 
     ansible_module = AnsibleModule(
         argument_spec=module_args,
-        mutually_exclusive=[('files', 'inline_query')],
-        required_one_of=[('files', 'inline_query')],
+        mutually_exclusive=[('files_reference', 'inline_query')],
+        required_one_of=[('files_reference', 'inline_query')],
         supports_check_mode=True
     )
 
