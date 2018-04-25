@@ -69,6 +69,12 @@ options:
         description:
             - The time to schedule the flow.
         required: false
+    rerun_option:
+        description:
+            - Wether or not to enable azkaban HA mechanism
+        default: yes
+        required: false
+        choices: ['yes', 'no']
     op:
         description:
             - Operation.
@@ -169,7 +175,7 @@ def _delete_schedule(session, url, schedule_id):
 
 
 def _create_schedule(session, url, project_name, project_id, flow_name,
-                     schedule_name, schedule_time, schedule_period):
+                     schedule_name, schedule_time, schedule_period, rerun_option):
     try:
         create_schedule = session.post(url + "/schedule?ajax=scheduleFlow",
                                        params={"is_recurring": "on",
@@ -179,7 +185,8 @@ def _create_schedule(session, url, project_name, project_id, flow_name,
                                                "projectId": project_id,
                                                "scheduleTime": schedule_time + ',UTC',
                                                "scheduleDate": pendulum.now().format('%m/%d/%Y'),
-                                               "scheduleName": schedule_name}).json()
+                                               "scheduleName": schedule_name,
+                                               "rerunOption":  rerun_option}).json()
         if create_schedule['status'] != 'success':
             raise Exception('Failed to create schedule {}. Error: {}'.format(schedule_name,
                                                                              json.dumps(create_schedule)))
@@ -198,6 +205,7 @@ def run_module():
         schedule_name=dict(type='str', required=True),
         schedule_period=dict(type='str', required=False, default=None),
         schedule_time=dict(type='str', required=False, default=None),
+        rerun_option=dict(type='str', required=False, default='yes'),
         op=dict(type='str', required=False, default='get', choices=['create', 'delete', 'get']),
     )
 
@@ -248,7 +256,8 @@ def run_module():
                                               flow_name=ansible_module.params['flow_name'],
                                               schedule_name=ansible_module.params['schedule_name'],
                                               schedule_time=ansible_module.params['schedule_time'],
-                                              schedule_period=ansible_module.params['schedule_period'])
+                                              schedule_period=ansible_module.params['schedule_period'],
+                                              rerun_option=ansible_module.params['rerun_option'])
         elif ansible_module.params['op'] == 'delete':
             schedule_info = _fetch_schedule(session=session,
                                             url=ansible_module.params['url'],
